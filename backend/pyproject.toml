@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "press-engine"
 version = "0.1.0"
 description = "Personal CRM for finding, pitching and managing relationships with music press, curators and creators."
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
@@ -30,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=2.6"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx2"]
 
 [project.scripts]
 press-engine = "press_engine.cli:app"
