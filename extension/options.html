@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Press Engine: extension settings</title>
+  <style>
+    body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 520px; margin: 40px auto; padding: 0 16px; color: #1d1d1f; }
+    label { display: block; margin: 14px 0 4px; font-size: 13px; color: #555; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; font: inherit; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 8px 14px; border-radius: 8px; border: 1px solid #2f5fd0; background: #2f5fd0; color: #fff; font: inherit; cursor: pointer; }
+    button.secondary { background: #fff; color: #2f5fd0; }
+    #status { margin-top: 14px; }
+    .ok { color: #1f7a4d; } .err { color: #b3261e; }
+    @media (prefers-color-scheme: dark) { body { background: #141416; color: #ececee; } input { background: #1d1d20; color: #ececee; border-color: #333; } }
+  </style>
+</head>
+<body>
+  <h1>Press Engine</h1>
+  <p>Paste the address of your Press Engine and the token D gave you. The button then appears on TikTok, Instagram and YouTube profiles and videos.</p>
+  <label for="url">Backend address</label>
+  <input id="url" placeholder="http://localhost:8000">
+  <label for="token">Your token</label>
+  <input id="token" type="password" placeholder="pe_...">
+  <button id="save">Save</button>
+  <button id="test" class="secondary">Test connection</button>
+  <div id="status"></div>
+  <script src="options.js"></script>
+</body>
+</html>

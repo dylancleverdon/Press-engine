@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Press Engine: Save to CRM",
+  "version": "0.1.0",
+  "description": "Adds a \"Save to CRM\" button to TikTok, Instagram and YouTube profiles and videos. Sends the creator to your Press Engine.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/*", "https://www.instagram.com/*", "https://www.youtube.com/*"],
+      "js": ["collect.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_title": "Press Engine settings" },
+  "options_page": "options.html"
+}
