@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "press-engine"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Personal CRM for finding, pitching and managing relationships with music press, curators and creators."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,9 @@ dev = ["pytest>=8", "httpx2"]
 
 [project.scripts]
 press-engine = "press_engine.cli:app"
+
+[tool.setuptools.dynamic]
+version = {attr = "press_engine.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["press_engine*"]

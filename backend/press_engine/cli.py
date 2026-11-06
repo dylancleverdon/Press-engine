@@ -15,6 +15,14 @@ from .config import get_config
 from .db import get_database
 
 app = typer.Typer(help="Press Engine: find, pitch and keep track of music press and creators.", no_args_is_help=True)
+
+
+def _version(value: bool) -> None:
+    if value:
+        from . import __version__
+
+        typer.echo(__version__)
+        raise typer.Exit()
 users_app = typer.Typer(help="Manage D and bandmates.", no_args_is_help=True)
 seeds_app = typer.Typer(help="Seed artists.", no_args_is_help=True)
 app.add_typer(users_app, name="user")
@@ -257,10 +265,15 @@ def serve(host: str = "127.0.0.1", port: int = 8000, scheduler: bool = typer.Opt
     """Run the dashboard + API (and the scheduler)."""
     import uvicorn
 
+    from . import runtime
     from .api.app import create_app
 
     _setup_logging()
-    uvicorn.run(create_app(start_scheduler=scheduler), host=host, port=port, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(create_app(start_scheduler=scheduler), host=host, port=port, log_level="info"))
+    runtime.attach_server(server)
+    server.run()
+    if runtime.restart_requested():
+        raise typer.Exit(runtime.RESTART_EXIT_CODE)  # the Mac app starts us again
 
 
 @app.command()
@@ -279,6 +292,11 @@ def worker():
             time.sleep(3600)
     except KeyboardInterrupt:
         sched.stop()
+
+
+@app.callback()
+def _root(version: bool = typer.Option(False, "--version", callback=_version, is_eager=True, help="Show the version")):
+    """Press Engine: find, pitch and keep track of music press and creators."""
 
 
 def main() -> None:  # pragma: no cover

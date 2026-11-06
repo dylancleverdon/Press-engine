@@ -13,9 +13,11 @@ import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
+from . import runtime, updater
 from .appsettings import load_settings
 from .db import Database
 from .jobs import last_run, run_job
+from .models import JobRun
 from .util.timeutil import get_tz, parse_hhmm, to_local, utcnow
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ class Scheduler:
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self._last: dict[str, datetime] = {}
+        self._fast_lock = threading.Lock()  # held while sending; updates wait for it
 
     # --- decisions (pure enough to unit-test) ---
     def daily_due(self, job: str, hhmm: str, tz_name: str, now: datetime) -> bool:
@@ -57,8 +60,39 @@ class Scheduler:
         if self.daily_due("queue", settings.queue_time, settings.timezone, now):
             log.info("building today's queue")
             run_job(self.db, self.svc, "queue", now=now)
+        self.update_tick(self.clock(), settings)
+
+    def update_tick(self, now: datetime, settings) -> None:
+        """Mac app only: look for a new release every few hours and install it."""
+        cfg = self.svc.cfg
+        if not (cfg.desktop and settings.auto_update and cfg.app_support_dir and cfg.uv_path):
+            return
+        every = timedelta(hours=cfg.update_check_hours)
+        if "update" not in self._last:  # first check a couple of minutes after starting
+            self._last["update"] = now - every + timedelta(minutes=2)
+            return
+        if not self.interval_due("update", every, now):
+            return
+        self._last["update"] = now
+        state = updater.maybe_update(self.svc.http, cfg, now=now)
+        if state.get("installed") or state.get("error"):
+            with self.db.session() as s:
+                s.add(JobRun(job="update", started_at=now, finished_at=self.clock(), ok=not state.get("error"),
+                             stats={"installed": state.get("installed"), "latest": state.get("latest")}, error=state.get("error")))
+        if state.get("installed"):
+            runtime.request_restart(f"update to {state['installed']}", delay=0)
+
+    def quiesce(self) -> None:
+        """Wait for an email that's being sent right now, then start no new work."""
+        with self._fast_lock:
+            self._stop.set()
 
     def fast_tick(self) -> None:
+        with self._fast_lock:
+            if not self._stop.is_set():
+                self._fast_tick()
+
+    def _fast_tick(self) -> None:
         now = self.clock()
         with self.db.session() as s:
             settings = load_settings(s)

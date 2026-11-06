@@ -112,6 +112,7 @@ class AppSettings(BaseModel):
     allow_outlet_inbox: bool = True
     daily_dm_target: int = 10
     sending_paused: bool = False
+    auto_update: bool = True  # Mac app: install new releases automatically
 
     # --- Dedupe / cooldowns (spec §4.6) ---
     cooldown_days: int = 30

@@ -31,12 +31,16 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from .. import runtime
+
         scheduler = Scheduler(db, svc) if run_scheduler else None
         if scheduler:
             scheduler.start()
+            runtime.attach_scheduler(scheduler)
         yield
         if scheduler:
             scheduler.stop()
+            runtime.attach_scheduler(None)
 
     app = FastAPI(title="Press Engine", version=__version__, lifespan=lifespan)
     app.state.db = db
@@ -52,6 +56,14 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
 
     @app.exception_handler(LoginRequired)
     async def _login(request: Request, exc: LoginRequired):
+        from sqlalchemy import func, select
+
+        from ..models import User
+
+        with db.session() as s:
+            first_run = not s.scalar(select(func.count(User.id)))
+        if first_run:
+            return RedirectResponse("/setup", status_code=303)
         return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
 
     @app.exception_handler(OwnerRequired)
@@ -59,8 +71,10 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
         return HTMLResponse("<p>Only the owner (D) can do that. <a href='/'>Back</a></p>", status_code=403)
 
     from .routes_api import router as api_router
+    from .routes_desktop import router as desktop_router
     from .routes_web import router as web_router
 
     app.include_router(api_router)
+    app.include_router(desktop_router)
     app.include_router(web_router)
     return app

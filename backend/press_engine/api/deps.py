@@ -81,8 +81,21 @@ class OwnerRequired(Exception):
     pass
 
 
+def session_user(request: Request, session: Session) -> User | None:
+    """Dashboard login: a signed session cookie, or (older logins) the raw token cookie."""
+    from ..sessions import COOKIE as SESSION_COOKIE
+    from ..sessions import verify
+
+    user_id = verify(request.app.state.svc.cfg.data_dir, request.cookies.get(SESSION_COOKIE))
+    if user_id is not None:
+        user = session.get(User, user_id)
+        if user is not None:
+            return user
+    return user_for_token(session, request.cookies.get(COOKIE))
+
+
 def web_user(request: Request, session: Session = Depends(get_db)) -> User:
-    user = user_for_token(session, request.cookies.get(COOKIE))
+    user = session_user(request, session)
     if user is None:
         raise LoginRequired()
     return user

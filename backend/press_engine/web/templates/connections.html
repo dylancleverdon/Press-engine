@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Connections · Press Engine{% endblock %}
+{% block content %}
+<h1>Connections</h1>
+<div class="cols">
+<div>
+  <div class="panel">
+    <h3>Google (send from your Gmail, calendar invites)</h3>
+    {% if google_connected %}
+      <p class="ok">Connected.</p>
+      <form method="post" action="/connections/google/disconnect" class="inline" data-confirm="Disconnect Google? Sending stops until you reconnect."><button class="danger">Disconnect</button></form>
+    {% else %}
+      {% if google_flow.status == "waiting" %}<p class="warn">Waiting for you to finish signing in in your browser… <a href="/connections">refresh</a></p>{% endif %}
+      {% if google_flow.status == "error" %}<p class="bad small">{{ google_flow.error }}</p>{% endif %}
+      <ol class="small">
+        <li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, create a project and enable the <b>Gmail API</b> and <b>Google Calendar API</b>.</li>
+        <li>Set up the <b>OAuth consent screen</b> (External), add yourself as a user, and set it to <b>In production</b>. In "Testing" Google signs you out every 7 days.</li>
+        <li>Create an <b>OAuth client ID</b> of type <b>Desktop app</b>, download the JSON file and upload it here.</li>
+      </ol>
+      <form method="post" action="/connections/google/client" enctype="multipart/form-data" class="row">
+        <input type="file" name="file" accept="application/json,.json" required class="grow">
+        <button>Upload</button>
+      </form>
+      {% if google_has_client %}
+      <form method="post" action="/connections/google/connect" style="margin-top: 10px"><button class="primary">Connect Google</button></form>
+      <p class="small muted">Opens Google's sign-in page in your browser. You'll see an "unverified app" warning: that's your own app, so continue.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <form method="post" action="/connections/keys" class="panel">
+    <h3>API keys and models</h3>
+    <p class="small muted">Stored only on this computer. Leave a key as it is to keep it; tick "clear" to remove it.</p>
+    {% for title, rows in groups %}
+      <h3 style="margin-top: 14px">{{ title }}</h3>
+      {% for r in rows %}
+        <label for="{{ r.key }}">{{ r.label }}{% if r.set %} <span class="chip ok">set</span>{% endif %}</label>
+        <input id="{{ r.key }}" name="{{ r.key }}" type="{{ 'password' if r.secret else 'text' }}" value="{{ r.value }}" placeholder="{{ r.hint }}" autocomplete="off">
+        {% if r.secret and r.set %}<label class="inline small"><input type="checkbox" name="clear_{{ r.key }}"> clear</label>{% endif %}
+      {% endfor %}
+    {% endfor %}
+    <div style="margin-top: 12px"><button class="primary">Save{% if is_desktop %} and restart{% endif %}</button></div>
+  </form>
+</div>
+
+<div>
+  <div class="panel">
+    <h3>Status</h3>
+    {% for name, value in sources.items() %}
+    <div class="row small"><span class="grow">{{ name }}</span>
+      {% if value %}<span class="chip ok">{{ value if value is string else "on" }}</span>{% else %}<span class="chip">off</span>{% endif %}</div>
+    {% endfor %}
+  </div>
+
+  {% if ollama is not none %}
+  <div class="panel">
+    <h3>Local model (Ollama)</h3>
+    {% if not ollama.running %}
+      <p class="small">Ollama isn't running. <a href="https://ollama.com/download" target="_blank" rel="noopener">Download Ollama for Mac</a>, open it, then refresh this page.
+        Until then, a simpler keyword-based reader is used.</p>
+    {% elif ollama.has_model %}
+      <p class="ok small">Running, with {{ extract_model }} installed.</p>
+    {% else %}
+      <p class="small">Running, but {{ extract_model }} isn't downloaded yet (about 2 GB).</p>
+      {% if ollama.pull.status == "downloading" %}<p class="warn small">Downloading… refresh to check.</p>
+      {% else %}<form method="post" action="/connections/ollama/pull"><button class="primary">Download {{ extract_model }}</button></form>{% endif %}
+      {% if ollama.pull.status == "error" %}<p class="bad small">{{ ollama.pull.error }}</p>{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h3>Chrome extension and phone app</h3>
+    <p class="small">Use this address in the extension's options and the phone app's Settings:</p>
+    {% for a in addresses %}<pre class="code">{{ a }}</pre>{% endfor %}
+    {% if desktop %}
+    <form method="post" action="/connections/desktop">
+      <label class="inline"><input type="checkbox" name="phone_access" value="true" {{ 'checked' if desktop.host == '0.0.0.0' }}>
+        Let my phone connect over Wi-Fi / Tailscale</label>
+      <label class="inline"><input type="checkbox" name="launch_at_login" value="true" {{ 'checked' if desktop.launch_at_login }}>
+        Open Press Engine when I log in</label>
+      <div><button style="margin-top: 8px">Save</button></div>
+    </form>
+    {% endif %}
+    <form method="post" action="/connections/token" data-confirm="Make a new token? The old one stops working in the extension and phone app." style="margin-top: 10px">
+      <button>Show me a new token</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3>Updates</h3>
+    <p class="small">Version {{ version }}{% if desktop_version %} · Mac app {{ desktop_version }}{% endif %}</p>
+    {% if update.checked_at %}<p class="small muted">Last checked {{ update.checked_at[:16].replace('T', ' ') }} UTC{% if update.latest %}, latest release {{ update.latest }}{% endif %}.
+      {% if update.error %}<span class="bad">{{ update.error }}</span>{% endif %}</p>{% endif %}
+    {% if update.skipped_bad_version %}<p class="small warn">Version {{ update.latest }} didn't start properly on this Mac and was rolled back; it won't be tried again.</p>{% endif %}
+    {% if is_desktop %}
+    <form method="post" action="/app/auto-update">
+      <label class="inline"><input type="checkbox" name="enabled" value="true" {{ 'checked' if settings.auto_update }} onchange="this.form.submit()">
+        Install updates automatically</label>
+    </form>
+    {% endif %}
+    <form method="post" action="/app/check-updates" style="margin-top: 8px"><button>Check for updates now</button></form>
+  </div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>You're set up · Press Engine</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main style="max-width: 560px; padding-top: 8vh;">
+  <h1>You're set up, {{ user.name }}</h1>
+  <div class="panel">
+    <p>This is your access token for the Chrome extension and the phone app. It's shown only once; you can make a new one any time on the Connections page.</p>
+    <pre class="code">{{ token }}</pre>
+    {% if not desktop %}<p class="small muted">You'll also need it to log in to this dashboard from another browser.</p>{% endif %}
+  </div>
+  <div class="panel">
+    <h3>Next: connect your accounts</h3>
+    <p class="small">Press Engine needs a few free API keys to find contacts, and your Google account to send email from your address. The Connections page walks you through it.</p>
+    <a class="button primary" href="/connections">Go to Connections</a>
+    <a class="button" href="/">Skip for now</a>
+  </div>
+</main>
+</body>
+</html>

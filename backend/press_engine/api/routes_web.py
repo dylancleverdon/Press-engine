@@ -60,11 +60,16 @@ templates.env.filters["pct"] = lambda v: f"{round((v or 0) * 100)}"
 
 
 def page(request: Request, name: str, user: User, session: Session, **ctx) -> HTMLResponse:
+    from .. import updater
+
     settings = ctx.pop("settings", None) or load_settings(session)
     ctx.setdefault("msg", request.query_params.get("msg"))
+    cfg = request.app.state.svc.cfg
+    state = updater.read_state(cfg) if cfg.desktop else {}
     return templates.TemplateResponse(request, name, {
         "user": user, "settings": settings, "local": lambda dt, fmt="%a %d %b %H:%M": _local(dt, settings.timezone, fmt),
-        "statuses": views.STATUSES, "profile_url": profile_url, **ctx,
+        "statuses": views.STATUSES, "profile_url": profile_url, "desktop": cfg.desktop,
+        "app_update": state.get("desktop_update"), "app_update_url": state.get("dmg_url"), **ctx,
     })
 
 
@@ -83,18 +88,21 @@ def login_form(request: Request, next: str = "/"):
 
 @router.post("/login")
 def login(request: Request, token: str = Form(...), next: str = Form("/"), session: Session = Depends(get_db)):
+    from .routes_desktop import login_response
+
     user = user_for_token(session, token.strip())
     if user is None:
         return templates.TemplateResponse(request, "login.html", {"next": next, "error": "That token isn't valid."}, status_code=401)
-    resp = RedirectResponse(next if next.startswith("/") else "/", status_code=303)
-    resp.set_cookie(COOKIE, token.strip(), httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
-    return resp
+    return login_response(request, user, next)
 
 
 @router.get("/logout")
 def logout():
+    from ..sessions import COOKIE as SESSION_COOKIE
+
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(COOKIE)
+    resp.delete_cookie(SESSION_COOKIE)
     return resp
 
 

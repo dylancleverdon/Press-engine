@@ -93,7 +93,10 @@ def cfg(tmp_path):
 def services(cfg, router):
     http = httpx.Client(transport=httpx.MockTransport(router), follow_redirects=True)
     fetcher = Fetcher(http, respect_robots=False, per_host_delay=0)
-    return Services(cfg=cfg, http=http, fetcher=fetcher, rng=random.Random(7))
+    from press_engine.outreach.google_auth import GoogleAuth
+
+    return Services(cfg=cfg, http=http, fetcher=fetcher, rng=random.Random(7),
+                    google=GoogleAuth(cfg.client_secrets_path, cfg.token_path))
 
 
 def dumps(obj) -> str:

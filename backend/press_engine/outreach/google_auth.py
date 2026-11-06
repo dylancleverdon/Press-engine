@@ -59,7 +59,7 @@ class GoogleAuth:
                 self.token_file.write_text(creds.to_json())
             return creds.token
 
-    def run_flow(self, port: int = 0) -> str:
+    def run_flow(self, port: int = 0, timeout_seconds: int | None = None) -> str:
         """Interactive consent in the browser. Returns the connected account's email if known."""
         from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -69,7 +69,10 @@ class GoogleAuth:
                 "(APIs & Services > Credentials > OAuth client ID > Desktop app)."
             )
         flow = InstalledAppFlow.from_client_secrets_file(str(self.client_secrets), SCOPES)
-        creds = flow.run_local_server(port=port, prompt="consent", access_type="offline")
+        try:
+            creds = flow.run_local_server(port=port, prompt="consent", access_type="offline", timeout_seconds=timeout_seconds)
+        except AttributeError as e:  # no redirect arrived before the timeout
+            raise GoogleAuthError("Google sign-in timed out. Try again.") from e
         self.token_file.parent.mkdir(parents=True, exist_ok=True)
         self.token_file.write_text(creds.to_json())
         self._creds = creds
@@ -82,3 +85,35 @@ class GoogleAuth:
         if self.token_file.exists():
             self.token_file.unlink()
         self._creds = None
+
+    # --- sign-in started from the dashboard (the backend runs on D's own Mac) ---
+
+    flow_state: dict[str, str | None] = {"status": "idle", "error": None}
+
+    def start_browser_flow(self, timeout_seconds: int = 300) -> bool:
+        """Open Google's consent page in the default browser and wait in the background."""
+        if self.flow_state.get("status") == "waiting":
+            return False
+        self.flow_state = {"status": "waiting", "error": None}
+
+        def run() -> None:
+            try:
+                self.run_flow(timeout_seconds=timeout_seconds)
+                self.flow_state = {"status": "connected", "error": None}
+            except Exception as e:  # report anything to the page
+                log.warning("Google sign-in failed: %s", e)
+                self.flow_state = {"status": "error", "error": str(e)}
+
+        threading.Thread(target=run, daemon=True, name="google-oauth").start()
+        return True
+
+    def save_client_secrets(self, raw: bytes) -> None:
+        try:
+            data = json.loads(raw)
+        except ValueError as e:
+            raise GoogleAuthError("That file isn't the JSON you download from Google Cloud Console.") from e
+        if "installed" not in data:
+            raise GoogleAuthError("Use an OAuth client of type 'Desktop app' (the file should contain \"installed\").")
+        self.client_secrets.parent.mkdir(parents=True, exist_ok=True)
+        self.client_secrets.write_bytes(raw)
+        self.client_secrets.chmod(0o600)

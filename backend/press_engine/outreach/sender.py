@@ -109,6 +109,7 @@ def send_due(session: Session, svc, settings: AppSettings, *, now: datetime, rng
         except GmailError:
             pass
         mark_pitched(o.person, settings, now)
+        session.commit()  # record the send at once so a restart can never send it twice
         stats["sent"] += 1
         break  # one per tick keeps sends naturally spaced
     session.flush()

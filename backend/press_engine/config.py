@@ -6,6 +6,7 @@ caps) lives in the database instead; see ``appsettings.py``.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -65,6 +66,24 @@ class Config(BaseSettings):
 
     extra_cors_origins: list[str] = Field(default_factory=list)
 
+    # Set by the Mac app when it launches the backend (desktop/src-tauri/src/backend.rs).
+    desktop: bool = False
+    desktop_version: str | None = None
+    desktop_login_secret: str | None = None
+    app_support_dir: Path | None = None  # folder the Mac app manages: venvs/, python/, desktop.json
+    uv_path: Path | None = None
+    port: int = 8000
+
+    # Automatic updates (Mac app only): new versions are published as GitHub releases.
+    update_repo: str = "dylancleverdon/Press-engine"
+    update_check_hours: float = 6
+    github_api: str = "https://api.github.com"
+
+    @property
+    def env_path(self) -> Path:
+        """API keys entered on the Connections page are saved here."""
+        return self.data_dir / ".env"
+
     @property
     def resolved_database_url(self) -> str:
         if self.database_url:
@@ -80,8 +99,15 @@ class Config(BaseSettings):
         return self.google_token_file or self.data_dir / "google_token.json"
 
 
-@lru_cache
-def get_config() -> Config:
-    cfg = Config()
+def load_config() -> Config:
+    """Read env vars, ./.env and <data dir>/.env (the last one wins over ./.env;
+    real environment variables win over both)."""
+    data_dir = Path(os.environ.get("PRESS_DATA_DIR", "./data"))
+    cfg = Config(_env_file=(Path(".env"), data_dir / ".env"))
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     return cfg
+
+
+@lru_cache
+def get_config() -> Config:
+    return load_config()

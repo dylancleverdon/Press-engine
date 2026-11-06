@@ -2,7 +2,8 @@
 {% block title %}Contacts · Press Engine{% endblock %}
 {% block content %}
 <div class="row"><h1 class="grow">Contacts <span class="muted small">{{ total }}</span></h1>
-  {% if user.is_owner %}<a class="button" href="/export.csv">Export CSV</a>{% endif %}</div>
+  {% if user.is_owner %}{% if desktop %}<form method="post" action="/export/save" class="inline"><button>Export CSV to Downloads</button></form>
+  {% else %}<a class="button" href="/export.csv">Export CSV</a>{% endif %}{% endif %}</div>
 <form method="get" class="row panel">
   <input type="text" name="q" value="{{ q }}" placeholder="Search names, notes, bios" class="grow" style="max-width: 360px">
   <select name="status" style="width:auto"><option value="">Any status</option>

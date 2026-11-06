@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import literal as sa_literal
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+log = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -45,6 +50,7 @@ class Database:
         from . import models  # noqa: F401  (register tables)
 
         Base.metadata.create_all(self.engine)
+        upgrade_schema(self.engine)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -57,6 +63,37 @@ class Database:
             raise
         finally:
             s.close()
+
+
+def upgrade_schema(engine: Engine) -> list[str]:
+    """Add columns that newer versions define but an existing database lacks.
+
+    Automatic updates deliver new code to an existing database, so additive
+    changes (new tables, new columns) are applied on startup. New tables come
+    from create_all; this handles new columns. Renames and drops still need a
+    hand-written migration.
+    """
+    insp = sa_inspect(engine)
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col.type.compile(dialect=engine.dialect)}'
+                default = col.default.arg if col.default is not None and col.default.is_scalar else None
+                if default is not None:
+                    literal = sa_literal(default).compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+                    ddl += f" DEFAULT {literal}"
+                    if not col.nullable:
+                        ddl += " NOT NULL"
+                conn.execute(text(ddl))
+                added.append(f"{table.name}.{col.name}")
+                log.info("schema upgrade: added %s.%s", table.name, col.name)
+    return added
 
 
 _db: Database | None = None

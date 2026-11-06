@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome · Press Engine</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main style="max-width: 520px; padding-top: 8vh;">
+  <h1>Welcome to Press Engine</h1>
+  <p class="muted">A few details to get started. You can change all of this later in Settings.</p>
+  <form method="post" action="/setup" class="panel">
+    <label for="name">Your name (used to sign emails)</label>
+    <input id="name" name="name" type="text" required autofocus>
+    <label for="band">Band name</label>
+    <input id="band" name="band" type="text" required>
+    <label for="timezone">Your time zone</label>
+    <input id="timezone" name="timezone" type="text" value="{{ timezone }}">
+    <label for="seeds">Artists you sound like (one per line)</label>
+    <textarea id="seeds" name="seeds">Athletic Progression</textarea>
+    {% if desktop %}
+    <label class="inline" style="margin-top: 12px"><input type="checkbox" name="launch_at_login" value="true" checked>
+      Open Press Engine when I log in, so emails keep going out</label>
+    {% endif %}
+    {% if error %}<p class="bad small">{{ error }}</p>{% endif %}
+    <div style="margin-top: 14px"><button class="primary" type="submit">Get started</button></div>
+  </form>
+</main>
+</body>
+</html>
