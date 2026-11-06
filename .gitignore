@@ -28,3 +28,4 @@ mobile/android/
 .DS_Store
 .idea/
 .vscode/
+expo-env.d.ts
