@@ -115,6 +115,15 @@ def add_coverage(
     return cov
 
 
+def flag_possible_duplicate(session: Session, a: int, b: int, reason: str, score: float = 0.8) -> None:
+    from ..models import MergeCandidate
+
+    a, b = sorted((a, b))
+    if session.scalar(select(MergeCandidate.id).where(MergeCandidate.person_a_id == a, MergeCandidate.person_b_id == b)) is None:
+        session.add(MergeCandidate(person_a_id=a, person_b_id=b, score=score, reason=reason))
+        session.flush()
+
+
 def find_person_at_outlet(outlet: Outlet, name: str) -> Person | None:
     key = name_key(name)
     for link in outlet.person_links:
@@ -137,6 +146,15 @@ def attach_email(session: Session, person: Person, outlet: Outlet | None, email:
     personal = (matches_name(email, person.name) or page_is_personal) and not is_generic(email)
     if personal:
         return add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=verified)
+    if page_is_personal and outlet is None:
+        # A creator's own "hello@ / booking@" inbox. It's theirs, but agencies share
+        # such inboxes, so a clash is flagged for review instead of auto-merging.
+        existing = find_identity(session, IdentityType.EMAIL, email)
+        if existing is None:
+            return add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=verified)
+        if existing.person_id != person.id:
+            flag_possible_duplicate(session, existing.person_id, person.id, f"Both list the address {email}")
+        return person
     if outlet is not None and verified and is_generic(email):
         if not outlet.contact_email:
             outlet.contact_email = email
