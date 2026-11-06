@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from . import LLMError, parse_json_text
+from . import LLMError, LLMUnavailable, parse_json_text
 
 
 class OllamaClient:
@@ -27,9 +27,9 @@ class OllamaClient:
         try:
             r = self.http.post(f"{self.base_url}/api/chat", json=body)
         except httpx.HTTPError as e:
-            raise LLMError(f"Ollama unreachable at {self.base_url}: {e}") from e
+            raise LLMUnavailable(f"Ollama unreachable at {self.base_url}: {e}") from e
         if r.status_code != 200:
-            raise LLMError(f"Ollama error {r.status_code}: {r.text[:300]}")
+            raise LLMUnavailable(f"Ollama error {r.status_code}: {r.text[:300]}")
         content = (r.json().get("message") or {}).get("content", "")
         if not content:
             raise LLMError("Ollama returned an empty response")

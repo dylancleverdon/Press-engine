@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from . import LLMError
+from . import LLMError, LLMUnavailable
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -47,11 +47,11 @@ class AnthropicClient:
         try:
             response = self.client.beta.messages.create(**kwargs)
         except anthropic.RateLimitError as e:
-            raise LLMError(f"Anthropic rate limit: {e.message}") from e
+            raise LLMUnavailable(f"Anthropic rate limit: {e.message}") from e
         except anthropic.APIStatusError as e:
             raise LLMError(f"Anthropic API error {e.status_code}: {e.message}") from e
         except anthropic.APIConnectionError as e:
-            raise LLMError(f"Anthropic connection error: {e}") from e
+            raise LLMUnavailable(f"Anthropic connection error: {e}") from e
         if response.stop_reason == "refusal":
             raise LLMError("Claude declined this request")
         if response.stop_reason == "max_tokens":

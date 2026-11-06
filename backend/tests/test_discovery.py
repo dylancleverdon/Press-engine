@@ -147,3 +147,29 @@ def test_heuristic_extraction_without_llm(session, services, router):
     person = session.scalar(select(Person).where(Person.name == "Mette Jensen"))
     assert person.coverage[0].kind == "review"
     assert session.scalar(select(Identity).where(Identity.value == "mette.jensen@jazznyt.dk")).verified
+
+
+def test_unreachable_model_falls_back_to_heuristic(session, services, router):
+    from press_engine.llm import LLMError, LLMUnavailable
+
+    add_seed(session, "Mammal Hands")
+    router.json("GET", "https://api.search.brave.com/", {"web": {"results": [{"url": "https://jazznyt.dk/anmeldelse/floa", "title": "x"}]}})
+    router.html("https://jazznyt.dk/anmeldelse/floa", REVIEW_HTML)
+    services.search = BraveSearch("k", services.http)
+
+    def down(system, prompt, schema):
+        raise LLMUnavailable("Ollama unreachable at http://localhost:11434: connection refused")
+
+    services.extract_llm = FakeLLM(json_fn=down)
+    stats = run_press_discovery(session, services, load_settings(session), max_queries=1, per_artist=1)
+    assert stats["new_people"] == 1 and session.scalar(select(Person).where(Person.name == "Mette Jensen"))
+
+    # A model that answers with garbage is still discarded (spec §4.5).
+    def garbage(system, prompt, schema):
+        raise LLMError("Model returned invalid JSON")
+
+    page = session.scalar(select(Page))
+    from press_engine.discovery.extract import extract_page
+    from press_engine.discovery.known import KnownArtists
+
+    assert extract_page(page, "Mammal Hands", KnownArtists(session), FakeLLM(json_fn=garbage)) is None

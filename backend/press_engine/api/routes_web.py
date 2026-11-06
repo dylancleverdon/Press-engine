@@ -69,7 +69,8 @@ def page(request: Request, name: str, user: User, session: Session, **ctx) -> HT
     return templates.TemplateResponse(request, name, {
         "user": user, "settings": settings, "local": lambda dt, fmt="%a %d %b %H:%M": _local(dt, settings.timezone, fmt),
         "statuses": views.STATUSES, "profile_url": profile_url, "desktop": cfg.desktop,
-        "app_update": state.get("desktop_update"), "app_update_url": state.get("dmg_url"), **ctx,
+        "app_update": state.get("desktop_update"), "app_update_url": state.get("dmg_url"),
+        "move_hint": cfg.desktop and cfg.desktop_move_hint, **ctx,
     })
 
 

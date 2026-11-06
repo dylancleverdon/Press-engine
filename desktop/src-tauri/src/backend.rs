@@ -236,6 +236,13 @@ pub fn health_check(port: u16) -> bool {
     }
 }
 
+/// Running straight from the DMG or from macOS's temporary "translocated" copy, where
+/// launch at login would point at a path that disappears.
+pub fn is_temporary_location(exe: &Path) -> bool {
+    let p = exe.to_string_lossy();
+    p.starts_with("/Volumes/") || p.contains("/AppTranslocation/")
+}
+
 pub fn resolves(host: &str) -> bool {
     (host, 0).to_socket_addrs().map(|mut a| a.next().is_some()).unwrap_or(false)
 }
@@ -339,6 +346,8 @@ pub struct Launch<'a> {
     pub port: u16,
     pub secret: &'a str,
     pub desktop_version: &'a str,
+    /// The app is running from the disk image / a temporary location: ask D to move it.
+    pub move_hint: bool,
 }
 
 pub fn spawn(paths: &Paths, l: &Launch) -> Result<Child, String> {
@@ -359,6 +368,7 @@ pub fn spawn(paths: &Paths, l: &Launch) -> Result<Child, String> {
         .env("PRESS_APP_SUPPORT_DIR", &paths.support)
         .env("PRESS_UV_PATH", paths.uv())
         .env("PRESS_PORT", l.port.to_string())
+        .env("PRESS_DESKTOP_MOVE_HINT", if l.move_hint { "1" } else { "0" })
         .env("UV_PYTHON_INSTALL_DIR", paths.python_dir())
         .env_remove("VIRTUAL_ENV")
         .stdin(Stdio::null())
@@ -428,6 +438,7 @@ pub struct Supervisor {
     pub desktop_version: String,
     child: Mutex<Option<Child>>,
     shutting_down: AtomicBool,
+    move_hint: AtomicBool,
     retry: (Mutex<bool>, std::sync::Condvar),
 }
 
@@ -445,8 +456,13 @@ impl Supervisor {
             desktop_version,
             child: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
+            move_hint: AtomicBool::new(false),
             retry: (Mutex::new(false), std::sync::Condvar::new()),
         })
+    }
+
+    pub fn set_move_hint(&self, on: bool) {
+        self.move_hint.store(on, Ordering::SeqCst);
     }
 
     pub fn shutdown(&self) {
@@ -540,7 +556,14 @@ impl Supervisor {
         let port = find_free_port(&host, prefs.port).ok_or("no free port to listen on")?;
         let mut child = spawn(
             &self.paths,
-            &Launch { version: &version, host: &host, port, secret: &self.secret, desktop_version: &self.desktop_version },
+            &Launch {
+                version: &version,
+                host: &host,
+                port,
+                secret: &self.secret,
+                desktop_version: &self.desktop_version,
+                move_hint: self.move_hint.load(Ordering::SeqCst),
+            },
         )?;
         let _ = write_marker(&self.paths, "backend.pid", &child.id().to_string());
 
@@ -631,6 +654,13 @@ mod tests {
 
     fn bundle(paths: &Paths, version: &str) {
         fs::write(paths.resources.join("backend").join(format!("press_engine-{version}-py3-none-any.whl")), b"wheel").unwrap();
+    }
+
+    #[test]
+    fn temporary_locations_are_detected() {
+        assert!(is_temporary_location(Path::new("/Volumes/Press Engine/Press Engine.app/Contents/MacOS/press-engine-desktop")));
+        assert!(is_temporary_location(Path::new("/private/var/folders/x/AppTranslocation/ABC/d/Press Engine.app/Contents/MacOS/p")));
+        assert!(!is_temporary_location(Path::new("/Applications/Press Engine.app/Contents/MacOS/press-engine-desktop")));
     }
 
     #[test]

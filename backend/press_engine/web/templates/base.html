@@ -37,6 +37,7 @@
 <main>
   {% if app_update %}<div class="flash">A new version of the Mac app ({{ app_update }}) is available.
     <a href="{{ app_update_url or 'https://github.com/dylancleverdon/Press-engine/releases/latest' }}">Download it</a>, then drag it into Applications to replace this one. Your data stays put.</div>{% endif %}
+  {% if move_hint %}<div class="flash warn">Press Engine is running from the disk image. Quit it, drag it into your Applications folder and open it from there, so it can open at login and keep sending.</div>{% endif %}
   {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>

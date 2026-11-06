@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from . import LLMError, parse_json_text
+from . import LLMError, LLMUnavailable, parse_json_text
 
 
 class OpenAICompatClient:
@@ -28,9 +28,9 @@ class OpenAICompatClient:
         try:
             r = self.http.post(self.url, json=body, headers=self.headers)
         except httpx.HTTPError as e:
-            raise LLMError(f"LLM server unreachable at {self.url}: {e}") from e
+            raise LLMUnavailable(f"LLM server unreachable at {self.url}: {e}") from e
         if r.status_code != 200:
-            raise LLMError(f"LLM server error {r.status_code}: {r.text[:300]}")
+            raise LLMUnavailable(f"LLM server error {r.status_code}: {r.text[:300]}")
         try:
             return r.json()["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, ValueError) as e:

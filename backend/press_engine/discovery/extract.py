@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from ..llm import LLMClient, LLMError
+from ..llm import LLMClient, LLMError, LLMUnavailable
 from ..models import Page
 from ..util.emails import normalize_email
 from ..util.text import clean_name, contains_phrase, fold, looks_like_person_name, name_key, truncate
@@ -242,6 +242,11 @@ def extract_page(page: Page, artist_name: str | None, known: KnownArtists, llm: 
     try:
         data = llm.json(SYSTEM, prompt, EXTRACTION_SCHEMA, max_tokens=800)
         raw = Extraction.model_validate({**data, "method": "llm"})
+    except LLMUnavailable as e:
+        # No model running (e.g. Ollama not installed yet): use the keyword reader
+        # rather than losing the page.
+        log.info("extraction model unavailable (%s); using the heuristic for %s", str(e)[:120], page.url)
+        return heuristic_extract(page, artist_name, known)
     except (LLMError, ValidationError) as e:
         log.info("extraction discarded for %s: %s", page.url, str(e)[:200])
         return None

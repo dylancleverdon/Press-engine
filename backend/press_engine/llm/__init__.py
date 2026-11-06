@@ -24,6 +24,10 @@ class LLMError(RuntimeError):
     pass
 
 
+class LLMUnavailable(LLMError):
+    """The model server couldn't be reached or refused the request (not a bad answer)."""
+
+
 class LLMClient(Protocol):
     name: str
 

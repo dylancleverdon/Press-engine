@@ -70,6 +70,7 @@ class Config(BaseSettings):
     desktop: bool = False
     desktop_version: str | None = None
     desktop_login_secret: str | None = None
+    desktop_move_hint: bool = False  # running from the DMG: suggest moving it to Applications
     app_support_dir: Path | None = None  # folder the Mac app manages: venvs/, python/, desktop.json
     uv_path: Path | None = None
     port: int = 8000

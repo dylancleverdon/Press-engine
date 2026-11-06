@@ -20,6 +20,7 @@ struct TauriUi {
     loading_url: Mutex<Option<Url>>,
     last_path: Mutex<Option<String>>,
     port: Mutex<Option<u16>>,
+    temporary_location: bool,
 }
 
 /// Like JavaScript's encodeURIComponent, so the loading page can always decode it.
@@ -97,6 +98,9 @@ impl Ui for TauriUi {
     }
 
     fn apply_prefs(&self, prefs: &Prefs) {
+        if self.temporary_location {
+            return; // a login item pointing into the DMG would break once it's ejected
+        }
         let launcher = self.app.autolaunch();
         if let Ok(enabled) = launcher.is_enabled() {
             if enabled != prefs.launch_at_login {
@@ -161,12 +165,15 @@ pub fn run() {
             let paths = Paths { support: app.path().app_data_dir()?, resources: app.path().resource_dir()? };
             let version = app.package_info().version.to_string();
             let supervisor = Supervisor::new(paths.clone(), random_secret(), version);
+            let temporary = std::env::current_exe().map(|e| backend::is_temporary_location(&e)).unwrap_or(false);
+            supervisor.set_move_hint(temporary);
             app.manage(supervisor.clone());
             let ui = Arc::new(TauriUi {
                 app: handle.clone(),
                 loading_url: Mutex::new(window.url().ok()),
                 last_path: Mutex::new(None),
                 port: Mutex::new(None),
+                temporary_location: temporary,
             });
             app.manage(ui.clone());
 
