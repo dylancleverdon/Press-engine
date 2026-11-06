@@ -16,7 +16,6 @@ from ..models import (
     MergeCandidate,
     OptOut,
     Person,
-    PersonOutlet,
 )
 from ..util.text import name_key
 from ..util.timeutil import utcnow

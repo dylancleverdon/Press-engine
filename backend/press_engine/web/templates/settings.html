@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Settings · Press Engine{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<div class="cols">
+<form method="post" action="/settings">
+  {% for title, fields in groups %}
+  <div class="panel">
+    <h3>{{ title }}</h3>
+    {% for name, label, kind, options, value in fields %}
+      {% if kind == "bool" %}
+        <label class="inline" style="margin-top:8px"><input type="checkbox" name="{{ name }}" {{ 'checked' if value }}> {{ label }}</label><br>
+      {% elif kind == "days" %}
+        <label>{{ label }}</label>
+        {% for d in days %}<label class="inline"><input type="checkbox" name="send_days" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 in value }}> {{ d }}</label>{% endfor %}
+      {% elif kind == "select" %}
+        <label for="{{ name }}">{{ label }}</label>
+        <select id="{{ name }}" name="{{ name }}">{% for opt in options %}<option {{ 'selected' if opt == value }}>{{ opt }}</option>{% endfor %}</select>
+      {% elif kind == "textarea" %}
+        <label for="{{ name }}">{{ label }}</label>
+        <textarea id="{{ name }}" name="{{ name }}" class="{{ 'tall' if name in ('pitch_body', 'band_sound_profile', 'blocked_domains', 'press_queries') }}">{{ value }}</textarea>
+      {% else %}
+        <label for="{{ name }}">{{ label }}</label>
+        <input id="{{ name }}" type="{{ 'number' if kind == 'number' else 'text' }}" {{ 'step=any' if kind == 'number' }} name="{{ name }}" value="{{ value }}">
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <button class="primary">Save settings</button>
+</form>
+
+<div>
+  <div class="panel">
+    <h3>Template placeholders</h3>
+    <table class="small">{% for k, v in placeholders.items() %}<tr><td><code>{{ "{" ~ k ~ "}" }}</code></td><td>{{ v }}</td></tr>{% endfor %}</table>
+    <p class="small muted">Opening line: <b>template</b> writes "I really enjoyed your review of X", <b>llm</b> uses the larger model's suggestion (falls back to the template), <b>manual</b> leaves it blank for you to write before approving.</p>
+  </div>
+  <div class="panel">
+    <h3>Google (Gmail + Calendar)</h3>
+    {% if google %}<p class="ok">Connected.</p>{% else %}<p class="warn">Not connected. On this computer run <code>press-engine google-auth</code>.</p>{% endif %}
+  </div>
+  <div class="panel">
+    <h3>People</h3>
+    {% for u in users %}
+    <div class="row small"><span class="grow">{{ u.name }} <span class="chip">{{ u.role }}</span></span>
+      {% if u.id != user.id %}<form method="post" action="/users/{{ u.id }}/delete" class="inline" data-confirm="Remove {{ u.name }}? Their token stops working."><button class="danger">Remove</button></form>{% endif %}</div>
+    {% endfor %}
+    <form method="post" action="/users" class="row" style="margin-top:10px">
+      <input type="text" name="name" placeholder="Bandmate's name" class="grow" required>
+      <button>Add and get a token</button>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

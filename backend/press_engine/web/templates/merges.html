@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Duplicates · Press Engine{% endblock %}
+{% block content %}
+<h1>Probably the same person?</h1>
+<p class="muted">Confirm with one tap so nobody gets pitched twice. Exact matches (same email, channel or handle) are merged automatically.</p>
+{% for m in rows %}
+<div class="panel">
+  <div class="muted small">{{ m.reason }} · confidence {{ (m.score * 100)|round|int }}%</div>
+  <div class="cols" style="grid-template-columns: 1fr 1fr; margin-top: 8px">
+    {% for p in [m.person_a, m.person_b] %}
+    <div>
+      <h3><a href="/contacts/{{ p.id }}">{{ p.name }}</a> <span class="chip">{{ p.kind }}</span></h3>
+      <div class="small">{% for i in p.identities %}<span class="chip">{{ i.type }}: {{ i.value }}</span>{% endfor %}</div>
+      <div class="small muted">{{ p.outlets | map(attribute="name") | join(", ") }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" action="/merges/{{ m.id }}" class="row" style="margin-top: 10px">
+    <button class="primary" name="decision" value="same">Same person: merge</button>
+    <button name="decision" value="different">Different people</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">No possible duplicates right now.</p>
+{% endfor %}
+{% endblock %}

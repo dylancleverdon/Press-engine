@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Inbox · Press Engine{% endblock %}
+{% block content %}
+<h1>Inbox</h1>
+<p class="muted">Replies, auto-replies and bounces on pitched threads. Out-of-office replies don't count as replies.</p>
+<table>
+  <tr><th>When</th><th>From</th><th>Message</th><th>Type</th></tr>
+  {% for m in rows %}
+  <tr style="{{ 'font-weight:600' if not m.read and m.kind == 'reply' }}">
+    <td class="small">{{ local(m.received_at) }}</td>
+    <td>{% if m.person %}<a href="/contacts/{{ m.person.id }}">{{ m.person.name }}</a>{% else %}{{ m.from_address }}{% endif %}</td>
+    <td>{% if m.outreach_id %}<a href="/inbox/{{ m.outreach_id }}">{{ m.subject or "(no subject)" }}</a>{% else %}{{ m.subject }}{% endif %}
+      <div class="small muted">{{ m.snippet }}</div></td>
+    <td><span class="chip {{ 'ok' if m.kind == 'reply' else 'bad' if m.kind == 'bounce' }}">{{ m.kind.replace('_', ' ') }}</span>
+      {% if m.opt_out %}<span class="chip bad">opt-out</span>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">No replies yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

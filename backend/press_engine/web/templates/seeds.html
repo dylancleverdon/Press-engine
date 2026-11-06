@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Seed artists · Press Engine{% endblock %}
+{% block content %}
+<h1>Seed artists</h1>
+<p class="muted">Artists the band sounds like. Each seed is expanded into similar artists on Last.fm; discovery searches for press and creators covering any of them.</p>
+{% if user.is_owner %}
+<form method="post" action="/seeds" class="panel row">
+  <input type="text" name="names" placeholder="Add seed artists (comma separated)" class="grow">
+  <button class="primary">Add</button>
+</form>
+{% endif %}
+<table>
+  <tr><th>Seed</th><th>Tags</th><th>Expanded</th><th></th></tr>
+  {% for a in seeds %}
+  <tr style="{{ 'opacity:.5' if not a.active }}"><td><b>{{ a.name }}</b></td><td class="small">{% for t in a.tags or [] %}<span class="chip">{{ t }}</span>{% endfor %}</td>
+    <td class="small">{{ local(a.expanded_at, "%d %b %Y") if a.expanded_at else "not yet" }}</td>
+    <td>{% if user.is_owner and a.active %}<form method="post" action="/seeds/{{ a.id }}/remove" class="inline" data-confirm="Remove {{ a.name }} as a seed?"><button class="danger">Remove</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No seeds yet. Start with Athletic Progression.</td></tr>{% endfor %}
+</table>
+
+<h2>Similar artists <span class="muted small">{{ similar|length }}</span></h2>
+<table>
+  <tr><th>Artist</th><th>Similarity</th><th>From seed</th><th>Last searched</th><th></th></tr>
+  {% for a in similar %}
+  <tr style="{{ 'opacity:.5' if not a.active or a.similarity <= 0 }}">
+    <td>{% if a.lastfm_url %}<a href="{{ a.lastfm_url }}" target="_blank" rel="noopener">{{ a.name }}</a>{% else %}{{ a.name }}{% endif %}</td>
+    <td>{{ (a.similarity * 100)|round|int }}%</td>
+    <td class="small">{{ parents.get(a.id, []) | join(", ") }}</td>
+    <td class="small">{{ local(a.last_press_search_at, "%d %b") if a.last_press_search_at else "-" }}</td>
+    <td>{% if user.is_owner %}<form method="post" action="/artists/{{ a.id }}/toggle" class="inline"><button>{{ "Exclude" if a.active else "Include" }}</button></form>{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="muted">Expand the seeds from <a href="/runs">Runs</a> (needs a Last.fm key).</td></tr>{% endfor %}
+</table>
+{% endblock %}

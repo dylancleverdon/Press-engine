@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}DM queue · Press Engine{% endblock %}
+{% block content %}
+<h1>DM queue</h1>
+<p class="muted">Creators without an email. Open their profile, send the message by hand (edit it first), then mark it sent.</p>
+{% if not queue %}<p class="muted">Nothing in the DM queue.</p>{% endif %}
+{% for o in queue %}
+<div class="panel">
+  <div class="row">
+    <h3 class="grow"><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a>
+      <span class="chip">{{ o.platform }}</span> <span class="chip">taste {{ o.person.taste_score|pct }}</span></h3>
+    {% set link = (o.person.identities | selectattr("type", "equalto", o.platform) | first) %}
+    {% if link %}<a class="button" href="{{ link.display if link.display.startswith('http') else '#' }}" target="_blank" rel="noopener">Open {{ o.to_address }}</a>{% endif %}
+  </div>
+  {% if o.person.found_by %}<div class="muted small">Found by {{ o.person.found_by.name }}</div>{% endif %}
+  <form method="post" action="/outreach/{{ o.id }}/dm-sent">
+    <label>Suggested message</label>
+    <textarea id="dm-{{ o.id }}" name="body">{{ o.body }}</textarea>
+    <div class="row" style="margin-top:8px">
+      <button type="button" data-copy="#dm-{{ o.id }}">Copy</button>
+      <button class="primary" type="submit">Mark as sent</button>
+    </div>
+  </form>
+  {% if user.is_owner %}<form method="post" action="/outreach/{{ o.id }}/skip" class="inline"><input type="hidden" name="next" value="/dms"><button class="danger" style="margin-top:6px">Skip</button></form>{% endif %}
+</div>
+{% endfor %}
+
+{% if sounds %}
+<h2>TikTok sound pages to browse</h2>
+<p class="muted small">Found by web search. Open one and use the Chrome extension's "Save to CRM" button on creators who used the sound.</p>
+<table>
+  {% for s in sounds %}
+  <tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a><br><span class="muted small">{{ s.artist_name }}</span></td>
+      <td><form method="post" action="/links/{{ s.id }}/reviewed" class="inline"><button>Done</button></form></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if sent %}
+<h2>Recently sent DMs</h2>
+<table>
+  <tr><th>When</th><th>To</th><th>By</th><th>Status</th></tr>
+  {% for o in sent %}
+  <tr><td>{{ local(o.sent_at) }}</td><td><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a> · {{ o.platform }}</td>
+      <td>{{ o.sent_by.name if o.sent_by else "" }}</td><td>{{ o.status }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

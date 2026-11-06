@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · Press Engine</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main style="max-width: 420px; padding-top: 12vh;">
+  <h1>Press Engine</h1>
+  <form method="post" action="/login" class="panel">
+    <label for="token">Access token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" autofocus required>
+    <input type="hidden" name="next" value="{{ next }}">
+    {% if error %}<p class="bad small">{{ error }}</p>{% endif %}
+    <p class="small muted">Run <code>press-engine init</code> (owner) or ask D for a bandmate token.</p>
+    <button class="primary" type="submit">Log in</button>
+  </form>
+</main>
+</body>
+</html>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import traceback
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -101,7 +102,7 @@ def run_job(db: Database, svc, name: str, *, now: datetime | None = None, quiet:
     ones) are only logged when something notable happened."""
     fn = JOBS[name]
     now = now or utcnow()
-    started = utcnow()
+    t0 = time.monotonic()
     with db.session() as s:
         settings = load_settings(s)
         try:
@@ -112,7 +113,8 @@ def run_job(db: Database, svc, name: str, *, now: datetime | None = None, quiet:
             log.exception("job %s failed", name)
             stats, ok, error = {}, False, "".join(traceback.format_exception_only(type(e), e)).strip()
         if not quiet or not ok or any(stats.get(k) for k in NOTABLE):
-            s.add(JobRun(job=name, started_at=started, finished_at=utcnow(), ok=ok, stats=_jsonable(stats), error=error))
+            finished = now + timedelta(seconds=time.monotonic() - t0)
+            s.add(JobRun(job=name, started_at=now, finished_at=finished, ok=ok, stats=_jsonable(stats), error=error))
     return {"ok": ok, "error": error, **stats}
 
 

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Today · Press Engine{% endblock %}
+{% block content %}
+<h1>Today <span class="muted small">{{ summary.date }} · {{ summary.timezone }}</span></h1>
+
+{% for w in summary.warnings %}<div class="flash warn">{{ w }}</div>{% endfor %}
+
+<div class="grid">
+  <div class="panel stat"><b>{{ summary.sent_today }} / {{ summary.cap }}</b><span class="muted">emails sent today / cap</span></div>
+  <div class="panel stat"><b>{{ queued|length }}</b><span class="muted">waiting for approval</span></div>
+  <div class="panel stat"><b>{{ scheduled|length }}</b><span class="muted">scheduled</span></div>
+  <div class="panel stat"><b><a href="/dms">{{ summary.dm_queue }}</a></b><span class="muted">DMs to send</span></div>
+  <div class="panel stat"><b><a href="/contacts">{{ summary.new_leads_24h }}</a></b><span class="muted">new leads (24h)</span></div>
+  {% if user.is_owner %}
+  <div class="panel stat"><b><a href="/inbox">{{ summary.unread_replies }}</a></b><span class="muted">unread replies</span></div>
+  <div class="panel stat"><b><a href="/merges">{{ summary.pending_merges }}</a></b><span class="muted">possible duplicates</span></div>
+  {% endif %}
+</div>
+
+<h2>Waiting for your approval</h2>
+{% if not queued %}<p class="muted">Nothing waiting. Today's queue is built at {{ settings.queue_time }}; you can also build it from <a href="/runs">Runs</a>.</p>{% endif %}
+{% if queued and user.is_owner %}
+<form method="post" action="/outreach/approve-all" data-confirm="Approve all {{ queued|length }} emails as they are?"><button class="primary">Approve all {{ queued|length }}</button></form><br>
+{% endif %}
+{% for o in queued %}
+<div class="panel email-card">
+  <div class="row">
+    <h3 class="grow"><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a>
+      {% if o.person.outlets %}<span class="muted">· {{ o.person.outlets[0].name }}</span>{% endif %}</h3>
+    <span class="chip">taste {{ o.person.taste_score|pct }}</span>
+    {% if o.to_kind == "outlet_inbox" %}<span class="chip warn">outlet inbox</span>{% endif %}
+  </div>
+  <div class="meta">To {{ o.to_address }}{% if o.person.score_reason %} · {{ o.person.score_reason }}{% endif %}</div>
+  {% if user.is_owner %}
+  <form method="post" action="/outreach/{{ o.id }}/approve">
+    <label>Subject</label><input type="text" name="subject" value="{{ o.subject }}">
+    <label>Email</label><textarea name="body" class="tall">{{ o.body }}</textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" type="submit">Approve</button>
+      <button type="submit" formaction="/outreach/{{ o.id }}/save">Save edits</button>
+    </div>
+  </form>
+  <form method="post" action="/outreach/{{ o.id }}/skip" class="inline"><button class="danger" style="margin-top:6px">Skip (snooze {{ settings.cooldown_days }} days)</button></form>
+  {% else %}
+  <pre class="msg">{{ o.body }}</pre>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2>Scheduled</h2>
+{% if scheduled %}
+<table>
+  <tr><th>When ({{ settings.timezone }})</th><th>To</th><th>Subject</th><th></th></tr>
+  {% for o in scheduled %}
+  <tr>
+    <td>{{ local(o.scheduled_at) if o.scheduled_at else "waiting for a slot" }}</td>
+    <td><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a><br><span class="muted small">{{ o.to_address }}</span></td>
+    <td>{{ o.subject }}</td>
+    <td>{% if user.is_owner %}<form method="post" action="/outreach/{{ o.id }}/skip" class="inline"><button class="danger">Cancel</button></form>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Nothing scheduled.</p>{% endif %}
+
+<h2>Recently sent</h2>
+{% if recent %}
+<table>
+  <tr><th>Sent</th><th>To</th><th>Channel</th><th>Status</th></tr>
+  {% for o in recent %}
+  <tr>
+    <td>{{ local(o.sent_at) }}</td>
+    <td><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a></td>
+    <td>{{ o.channel }}{% if o.platform %} · {{ o.platform }}{% endif %}{% if o.sent_by %} · by {{ o.sent_by.name }}{% endif %}</td>
+    <td><span class="chip {{ 'ok' if o.status == 'replied' else 'bad' if o.status in ('bounced', 'failed') }}">{{ o.status }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Nothing sent yet.</p>{% endif %}
+
+{% if replies and user.is_owner %}
+<h2>Latest replies</h2>
+{% for m in replies %}
+<div class="panel"><a href="/inbox/{{ m.outreach_id }}"><b>{{ m.person.name if m.person else m.from_address }}</b></a>
+  <span class="muted small">· {{ local(m.received_at) }}</span>{% if m.opt_out %} <span class="chip bad">opted out</span>{% endif %}
+  <div class="small">{{ m.snippet }}</div></div>
+{% endfor %}
+{% endif %}
+{% endblock %}

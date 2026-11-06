@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }} · Press Engine{% endblock %}
+{% block content %}
+<div class="row">
+  <h1 class="grow">{{ p.name }} <span class="chip">{{ p.kind }}</span>
+    {% if p.opted_out %}<span class="chip bad">opted out</span>{% endif %}
+    {% if p.needs_review %}<span class="chip warn">needs review</span>{% endif %}</h1>
+  <span class="chip">taste {{ p.taste_score|pct }}</span>
+</div>
+{% if p.review_reason %}<div class="flash warn">{{ p.review_reason }}
+  {% if user.is_owner %}<form method="post" action="/contacts/{{ p.id }}/reviewed" class="inline"><button>Mark reviewed</button></form>{% endif %}</div>{% endif %}
+{% for m in merges %}<div class="flash">Possible duplicate: {{ m.reason }} · <a href="/merges">review</a></div>{% endfor %}
+
+<div class="cols">
+<div>
+  <div class="panel">
+    <div class="muted small">
+      {% if p.outlets %}{{ p.outlets | map(attribute="name") | join(", ") }} · {% endif %}
+      {% if p.language %}language {{ p.language }} · {% endif %}{% if p.followers %}{{ "{:,}".format(p.followers) }} followers · {% endif %}
+      found {{ local(p.created_at, "%d %b %Y") }}{% if p.found_via %} via {{ p.found_via.replace('_', ' ') }}{% endif %}{% if p.found_by %} by {{ p.found_by.name }}{% endif %}
+    </div>
+    {% if p.score_reason %}<p><b>Why:</b> {{ p.score_reason }}</p>{% endif %}
+    {% if p.opener %}<p><b>Suggested opener:</b> {{ p.opener }}</p>{% endif %}
+    {% if p.bio %}<p class="small">{{ p.bio }}</p>{% endif %}
+    <p class="small"><b>Contact:</b> {{ contact_line(p, settings) }}</p>
+  </div>
+
+  <h2>What they've covered</h2>
+  <table>
+    <tr><th>Date</th><th>Artist</th><th>Piece</th></tr>
+    {% for c in p.coverage | sort(attribute="id", reverse=True) %}
+    <tr><td class="small">{{ c.published_at or "" }}</td><td>{{ c.artist_name }}{% if c.artist and c.artist.is_seed %} <span class="chip ok">seed</span>{% endif %}</td>
+        <td><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title or c.url }}</a> <span class="muted small">{{ c.kind or "" }}</span>
+          {% if c.summary %}<div class="small muted">{{ c.summary }}</div>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">Nothing recorded yet.</td></tr>{% endfor %}
+  </table>
+
+  <h2>Outreach</h2>
+  <table>
+    <tr><th>Channel</th><th>Status</th><th>When</th><th></th></tr>
+    {% for o in p.outreach | reverse %}
+    <tr><td>{{ o.channel }}{% if o.platform %} · {{ o.platform }}{% endif %}<br><span class="small muted">{{ o.to_address }}</span></td>
+        <td>{{ o.status }}{% if o.error %}<div class="small bad">{{ o.error }}</div>{% endif %}</td>
+        <td class="small">{{ local(o.sent_at) if o.sent_at else (local(o.scheduled_at) if o.scheduled_at else o.queue_date or "") }}</td>
+        <td>{% if o.gmail_thread_id and user.is_owner %}<a href="/inbox/{{ o.id }}">thread</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">Not contacted yet.</td></tr>{% endfor %}
+  </table>
+
+  {% if inbound %}
+  <h2>Messages from them</h2>
+  {% for m in inbound %}<div class="panel small"><b>{{ m.kind.replace('_', ' ') }}</b> · {{ local(m.received_at) }} · {{ m.subject }}<br>{{ m.snippet }}</div>{% endfor %}
+  {% endif %}
+</div>
+
+<div>
+  {% if user.is_owner %}
+  <form method="post" action="/contacts/{{ p.id }}/update" class="panel">
+    <h3>Status and notes</h3>
+    <select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == p.status }}>{{ s.replace('_', ' ') }}</option>{% endfor %}</select>
+    <label>Notes</label><textarea name="notes">{{ p.notes or "" }}</textarea>
+    <button class="primary" style="margin-top:8px">Save</button>
+  </form>
+  {% endif %}
+
+  <div class="panel">
+    <h3>Identities</h3>
+    {% for i in p.identities %}
+    <div class="small row" style="margin: 4px 0">
+      <span class="chip">{{ i.type }}</span>
+      <span class="grow">{% if i.display and i.display.startswith("http") %}<a href="{{ i.display }}" target="_blank" rel="noopener">{{ i.value }}</a>{% else %}{{ i.value }}{% endif %}
+        {% if i.type == "email" %}{% if i.bounced %}<span class="chip bad">bounced</span>{% elif i.verified %}<span class="chip ok">verified</span>{% else %}<span class="chip warn">unverified</span>{% endif %}{% endif %}</span>
+      {% if user.is_owner %}
+        {% if i.type == "email" and (not i.verified or i.bounced) %}<form method="post" action="/contacts/{{ p.id }}/identities/{{ i.id }}/verify" class="inline"><button title="I checked this address is right">Confirm</button></form>{% endif %}
+        <form method="post" action="/contacts/{{ p.id }}/identities/{{ i.id }}/delete" class="inline" data-confirm="Remove {{ i.value }}?"><button class="danger">×</button></form>
+      {% endif %}
+    </div>
+    {% if i.source_url %}<div class="muted small" style="margin-left: 6px">from {{ i.source_url }}</div>{% endif %}
+    {% endfor %}
+    {% if user.is_owner %}
+    <form method="post" action="/contacts/{{ p.id }}/identities" class="row" style="margin-top:8px">
+      <select name="type" style="width:auto">{% for t in identity_types %}<option>{{ t }}</option>{% endfor %}</select>
+      <input type="text" name="value" placeholder="email or handle" class="grow">
+      <button>Add</button>
+    </form>
+    <form method="post" action="/contacts/{{ p.id }}/resolve" style="margin-top:8px"><button>Look for an email now</button></form>
+    {% endif %}
+  </div>
+
+  {% if user.is_owner %}
+  <form method="post" action="/contacts/{{ p.id }}/meetings" class="panel">
+    <h3>Book a call / interview</h3>
+    <label>Title</label><input type="text" name="title" value="Call with {{ p.name }}">
+    <label>Start ({{ settings.timezone }})</label><input type="datetime-local" name="start" required>
+    <label>Minutes</label><input type="number" name="duration" value="30">
+    <label>Notes</label><textarea name="notes"></textarea>
+    <label class="inline"><input type="checkbox" name="invite" value="true"> Invite them by email</label>
+    <label class="inline"><input type="checkbox" name="meet" value="true" checked> Add a Meet link</label>
+    <div><button class="primary" style="margin-top:8px">Book</button></div>
+  </form>
+  {% for m in p.meetings %}<div class="panel small"><b>{{ m.title }}</b><br>{{ local(m.starts_at) }}
+    {% if m.meet_url %}· <a href="{{ m.meet_url }}">Meet</a>{% endif %}{% if m.html_link %} · <a href="{{ m.html_link }}">Calendar</a>{% endif %}</div>{% endfor %}
+
+  {% if not p.opted_out %}
+  <form method="post" action="/contacts/{{ p.id }}/opt-out" data-confirm="Permanently stop contacting {{ p.name }}?" class="panel">
+    <button class="danger">Opt out permanently</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Press Engine{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<header>
+  <nav>
+    <span class="brand">Press Engine</span>
+    {% set path = request.url.path %}
+    <a href="/" class="{{ 'active' if path == '/' }}">Today</a>
+    <a href="/contacts" class="{{ 'active' if path.startswith('/contacts') }}">Contacts</a>
+    <a href="/dms" class="{{ 'active' if path.startswith('/dms') }}">DM queue</a>
+    {% if user.is_owner %}
+    <a href="/inbox" class="{{ 'active' if path.startswith('/inbox') }}">Inbox</a>
+    <a href="/merges" class="{{ 'active' if path.startswith('/merges') }}">Duplicates</a>
+    {% endif %}
+    <a href="/seeds" class="{{ 'active' if path.startswith('/seeds') }}">Seed artists</a>
+    <a href="/runs" class="{{ 'active' if path.startswith('/runs') }}">Runs</a>
+    {% if user.is_owner %}<a href="/settings" class="{{ 'active' if path.startswith('/settings') }}">Settings</a>{% endif %}
+    <span class="who">{{ user.name }} · <a href="/logout">log out</a></span>
+  </nav>
+</header>
+<main>
+  {% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

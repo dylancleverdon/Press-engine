@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ o.person.name }} · Inbox{% endblock %}
+{% block content %}
+<h1><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a> <span class="muted small">{{ o.to_address }} · {{ o.person.status.replace('_', ' ') }}</span></h1>
+{% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
+{% for m in messages %}
+<div class="msg {{ 'me' if m.is_me }}"><div class="small muted">{{ 'You' if m.is_me else (m.from_name or m.from_address) }} · {{ m.date[:16].replace('T', ' ') }} UTC</div>{{ m.text }}</div>
+{% else %}
+{% if not error %}<p class="muted">No messages found in this thread.</p>{% endif %}
+{% endfor %}
+
+<form method="post" action="/inbox/{{ o.id }}/reply" class="panel">
+  <h3>Reply</h3>
+  <textarea name="body" class="tall" required placeholder="Write your reply, or ask for a suggested draft and edit it.">{{ draft }}</textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="primary" type="submit" data-confirm="Send this reply from your Gmail?">Send from Gmail</button>
+    <button type="submit" formaction="/inbox/{{ o.id }}/draft" formnovalidate>Suggest a draft</button>
+  </div>
+  <p class="small muted">Drafts are only suggestions; nothing is sent until you press Send.</p>
+</form>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Runs · Press Engine{% endblock %}
+{% block content %}
+<h1>Runs</h1>
+<p class="muted">Discovery runs daily at {{ settings.discovery_time }} and the queue is built at {{ settings.queue_time }} ({{ settings.timezone }}). Sending and reply checks run in the background all day.</p>
+{% if user.is_owner %}
+<div class="panel row">
+  {% for job, label in [("expand", "Expand seeds (Last.fm)"), ("discover", "Run discovery now"), ("queue", "Build today's queue"), ("send", "Send what's due"), ("replies", "Check for replies")] %}
+  <form method="post" action="/runs/{{ job }}" class="inline"><button>{{ label }}</button></form>
+  {% endfor %}
+</div>
+{% endif %}
+<table>
+  <tr><th>Job</th><th>Started</th><th>Took</th><th>Result</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.job }}</td>
+    <td class="small">{{ local(r.started_at) }}</td>
+    <td class="small">{% if r.finished_at %}{{ ((r.finished_at - r.started_at).total_seconds())|round|int }}s{% else %}running…{% endif %}</td>
+    <td class="small">{% if r.ok == false %}<span class="bad">{{ r.error }}</span>{% else %}<code>{{ r.stats | tojson }}</code>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">No runs yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Contacts · Press Engine{% endblock %}
+{% block content %}
+<div class="row"><h1 class="grow">Contacts <span class="muted small">{{ total }}</span></h1>
+  {% if user.is_owner %}<a class="button" href="/export.csv">Export CSV</a>{% endif %}</div>
+<form method="get" class="row panel">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search names, notes, bios" class="grow" style="max-width: 360px">
+  <select name="status" style="width:auto"><option value="">Any status</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == status }}>{{ s.replace('_', ' ') }}</option>{% endfor %}</select>
+  <select name="kind" style="width:auto"><option value="">Any kind</option>
+    {% for k in ["press", "creator", "curator"] %}<option value="{{ k }}" {{ 'selected' if k == kind }}>{{ k }}</option>{% endfor %}</select>
+  <button type="submit">Filter</button>
+</form>
+<table>
+  <tr><th>Name</th><th>Kind</th><th>Taste</th><th>Covered</th><th>Contact</th><th>Status</th><th>Found</th></tr>
+  {% for p in rows %}
+  <tr>
+    <td><a href="/contacts/{{ p.id }}">{{ p.name }}</a>{% if p.outlets %}<br><span class="muted small">{{ p.outlets[0].name }}</span>{% endif %}
+      {% if p.needs_review %}<span class="chip warn">review</span>{% endif %}</td>
+    <td>{{ p.kind }}</td>
+    <td>{{ p.taste_score|pct }}{% if p.llm_score is not none %} <span class="muted small">(AI {{ p.llm_score|int }})</span>{% endif %}</td>
+    <td class="small">{% for a in (p.taste_profile or {}).get("artists", {}) | list %}{% if loop.index <= 3 %}<span class="chip">{{ a }}</span>{% endif %}{% endfor %}</td>
+    <td class="small">{{ contact_line(p, settings) }}</td>
+    <td>{% if p.opted_out %}<span class="chip bad">opted out</span>{% else %}{{ p.status.replace('_', ' ') }}{% endif %}</td>
+    <td class="small muted">{{ local(p.created_at, "%d %b") }}{% if p.found_by %}<br>{{ p.found_by.name }}{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">No contacts yet. Add seed artists and run discovery.</td></tr>
+  {% endfor %}
+</table>
+<div class="pager row">
+  {% if p > 1 %}<a href="?q={{ q }}&status={{ status }}&kind={{ kind }}&p={{ p - 1 }}">← Prev</a>{% endif %}
+  <span class="muted">Page {{ p }} of {{ pages }}</span>
+  {% if p < pages %}<a href="?q={{ q }}&status={{ status }}&kind={{ kind }}&p={{ p + 1 }}">Next →</a>{% endif %}
+</div>
+{% endblock %}

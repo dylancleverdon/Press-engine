@@ -17,7 +17,7 @@ from .discovery.known import KnownArtists
 from .models import IdentityType, Person, PersonKind, User
 from .scoring import combined_score, taste_profile
 from .util.emails import EMAIL_RE, normalize_email
-from .util.urls import TIKTOK_VIDEO_RE, HANDLE_RE, SocialRef, is_short_link, parse_social
+from .util.urls import HANDLE_RE, TIKTOK_VIDEO_RE, SocialRef, is_short_link, parse_social
 
 log = logging.getLogger(__name__)
 
