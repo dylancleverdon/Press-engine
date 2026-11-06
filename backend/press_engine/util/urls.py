@@ -188,11 +188,26 @@ def site_identity(url: str) -> SocialRef | None:
     return SocialRef("site", host, host, f"https://{host}/")
 
 
+PROFILE_URLS = {
+    "tiktok": "https://www.tiktok.com/@{v}", "instagram": "https://www.instagram.com/{v}/", "x": "https://x.com/{v}",
+    "bluesky": "https://bsky.app/profile/{v}", "threads": "https://www.threads.net/@{v}",
+    "facebook": "https://www.facebook.com/{v}", "soundcloud": "https://soundcloud.com/{v}",
+    "spotify": "https://open.spotify.com/user/{v}", "linkinbio": "https://{v}", "site": "https://{v}/",
+}
+
+
+def profile_url(type_: str, value: str) -> str | None:
+    """Canonical link to a profile from an identity key."""
+    if type_ == "youtube":
+        if value.startswith("UC"):
+            return f"https://www.youtube.com/channel/{value}"
+        return f"https://www.youtube.com/{value}"
+    tpl = PROFILE_URLS.get(type_)
+    return tpl.format(v=value) if tpl else None
+
+
 TIKTOK_VIDEO_RE = re.compile(r"tiktok\.com/@([A-Za-z0-9._-]+)/(?:video|photo)/(\d+)", re.I)
 TIKTOK_MUSIC_RE = re.compile(r"tiktok\.com/music/([^/?#]+)", re.I)
-SHORT_LINK_HOSTS = {"vm.tiktok.com", "vt.tiktok.com", "tiktok.com/t", "instagr.am", "bit.ly", "lnk.to"}
-
-
 def is_short_link(url: str) -> bool:
     host = host_of(url)
     return host in ("vm.tiktok.com", "vt.tiktok.com", "bit.ly") or (

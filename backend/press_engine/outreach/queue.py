@@ -198,7 +198,7 @@ def build_daily_queue(session: Session, settings: AppSettings, *, now: datetime,
         if person.cooldown_until and person.cooldown_until > now:
             continue
         session.add(Outreach(
-            person=person, channel=Channel.DM, platform=ident.type, to_address=ident.display or ident.value,
+            person=person, channel=Channel.DM, platform=ident.type, to_address="@" + ident.value.lstrip("@"),
             status=OutreachStatus.QUEUED, body=render_dm(person, settings), queue_date=today, created_by_user_id=user_id,
         ))
         person.status = PersonStatus.QUEUED

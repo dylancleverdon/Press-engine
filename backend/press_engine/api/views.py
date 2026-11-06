@@ -24,6 +24,7 @@ from ..models import (
 from ..outreach.queue import email_target, sent_on
 from ..outreach.schedule import cap_for_day
 from ..util.timeutil import get_tz, to_local, utcnow
+from ..util.urls import profile_url
 
 
 def iso(dt: datetime | None) -> str | None:
@@ -86,7 +87,8 @@ def outreach_dict(o: Outreach, *, with_person: bool = True) -> dict:
     }
     if with_person:
         d["person"] = person_brief(o.person)
-        d["profile_url"] = next((i.display for i in o.person.identities if i.type == o.platform), None)
+        ident = next((i for i in o.person.identities if i.type == o.platform), None)
+        d["profile_url"] = profile_url(ident.type, ident.value) if ident else None
     return d
 
 

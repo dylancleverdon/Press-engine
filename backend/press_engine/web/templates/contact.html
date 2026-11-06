@@ -67,7 +67,8 @@
     {% for i in p.identities %}
     <div class="small row" style="margin: 4px 0">
       <span class="chip">{{ i.type }}</span>
-      <span class="grow">{% if i.display and i.display.startswith("http") %}<a href="{{ i.display }}" target="_blank" rel="noopener">{{ i.value }}</a>{% else %}{{ i.value }}{% endif %}
+      {% set link = profile_url(i.type, i.value) %}
+      <span class="grow">{% if link %}<a href="{{ link }}" target="_blank" rel="noopener">{{ i.value }}</a>{% else %}{{ i.value }}{% endif %}
         {% if i.type == "email" %}{% if i.bounced %}<span class="chip bad">bounced</span>{% elif i.verified %}<span class="chip ok">verified</span>{% else %}<span class="chip warn">unverified</span>{% endif %}{% endif %}</span>
       {% if user.is_owner %}
         {% if i.type == "email" and (not i.verified or i.bounced) %}<form method="post" action="/contacts/{{ p.id }}/identities/{{ i.id }}/verify" class="inline"><button title="I checked this address is right">Confirm</button></form>{% endif %}

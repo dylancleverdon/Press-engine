@@ -35,7 +35,7 @@ Thanks for listening,
 {opt_out_line}"""
 
 DEFAULT_DM = (
-    "Hey {first_name}! {opener} We're {band_name}. {band_blurb} "
+    "Hey {first_name}! {opener} I'm {sender_name} from {band_name}. {band_blurb} "
     "Would you be up for giving our new track a listen? {track_url}"
 )
 

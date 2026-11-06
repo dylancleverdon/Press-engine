@@ -42,6 +42,7 @@ from ..outreach.gmail import GmailError
 from ..outreach.google_auth import GoogleAuthError
 from ..outreach.replies import send_reply, suggest_reply, thread_messages
 from ..util.timeutil import get_tz, to_local, utcnow
+from ..util.urls import profile_url
 from . import views
 from .app import WEB_DIR
 from .deps import COOKIE, get_db, get_svc, user_for_token, web_owner, web_user
@@ -63,7 +64,7 @@ def page(request: Request, name: str, user: User, session: Session, **ctx) -> HT
     ctx.setdefault("msg", request.query_params.get("msg"))
     return templates.TemplateResponse(request, name, {
         "user": user, "settings": settings, "local": lambda dt, fmt="%a %d %b %H:%M": _local(dt, settings.timezone, fmt),
-        "statuses": views.STATUSES, **ctx,
+        "statuses": views.STATUSES, "profile_url": profile_url, **ctx,
     })
 
 

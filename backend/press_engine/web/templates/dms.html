@@ -9,8 +9,8 @@
   <div class="row">
     <h3 class="grow"><a href="/contacts/{{ o.person.id }}">{{ o.person.name }}</a>
       <span class="chip">{{ o.platform }}</span> <span class="chip">taste {{ o.person.taste_score|pct }}</span></h3>
-    {% set link = (o.person.identities | selectattr("type", "equalto", o.platform) | first) %}
-    {% if link %}<a class="button" href="{{ link.display if link.display.startswith('http') else '#' }}" target="_blank" rel="noopener">Open {{ o.to_address }}</a>{% endif %}
+    {% set ident = (o.person.identities | selectattr("type", "equalto", o.platform) | first) %}
+    {% if ident %}<a class="button" href="{{ profile_url(ident.type, ident.value) }}" target="_blank" rel="noopener">Open {{ o.to_address }} on {{ o.platform }}</a>{% endif %}
   </div>
   {% if o.person.found_by %}<div class="muted small">Found by {{ o.person.found_by.name }}</div>{% endif %}
   <form method="post" action="/outreach/{{ o.id }}/dm-sent">

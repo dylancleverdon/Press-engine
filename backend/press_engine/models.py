@@ -187,8 +187,11 @@ class Person(Base):
 
     @property
     def first_name(self) -> str | None:
+        """How to greet them: a writer's first name; a creator's display name or handle."""
         if self.is_desk or not self.name:
             return None
+        if self.kind != PersonKind.PRESS:
+            return self.name.lstrip("@")
         return self.name.split()[0]
 
 
