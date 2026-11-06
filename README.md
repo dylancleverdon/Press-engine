@@ -267,12 +267,19 @@ cd desktop/src-tauri && cargo test --lib
 E2E_WHEEL=$PWD/../../dist/press_engine-0.2.0-py3-none-any.whl E2E_UV=$(which uv) cargo test --test update_protocol -- --ignored
 ```
 
+Mac app (`desktop/`):
+- `src-tauri/src/backend.rs`: first-run install, starting and watching the backend, updates and rollback.
+- `src-tauri/src/lib.rs`: window, menu bar item, launch at login, opening links in the browser.
+- `src/index.html`: the loading and error screen.
+- `scripts/prepare-resources.sh`: puts uv and the backend wheel into the bundle.
+
 Code map (`backend/press_engine/`):
 - `discovery/`: Last.fm, search, page fetching and parsing, extraction, the press/YouTube/TikTok/playlist engines.
 - `contacts/`: ingest, resolution, dedupe.
 - `scoring.py`
 - `outreach/`: templates, queue, schedule, sender, Gmail, replies.
 - `calendar.py`, `capture.py`, `jobs.py`, `scheduler.py`
+- `updater.py`, `runtime.py`: self-updates and restarts inside the Mac app.
 - `api/`: JSON API and dashboard.
 - `cli.py`
 
