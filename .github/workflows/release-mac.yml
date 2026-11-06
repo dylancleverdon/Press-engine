@@ -1,0 +1,121 @@
+name: Mac app
+
+# Push a tag like v0.2.1 to publish a release. The Mac app checks the latest
+# release every few hours and updates itself from the wheel attached to it.
+# The DMG is always attached as Press-Engine-mac.dmg, so this link stays valid:
+# https://github.com/dylancleverdon/Press-engine/releases/latest/download/Press-Engine-mac.dmg
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a GitHub release (otherwise only build and test)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mac-app-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test the backend
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pytest -q
+
+      - name: Build the backend wheel
+        id: versions
+        run: |
+          python -m pip install build
+          python -m build --wheel backend --outdir dist
+          WHEEL="$(ls dist/press_engine-*.whl)"
+          BACKEND_VERSION="$(basename "$WHEEL" | cut -d- -f2)"
+          DESKTOP_VERSION="$(python -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")"
+          echo "wheel=$WHEEL" >> "$GITHUB_OUTPUT"
+          echo "backend=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
+          echo "desktop=$DESKTOP_VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "${GITHUB_REF_NAME#v}" != "$BACKEND_VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the backend version $BACKEND_VERSION (backend/press_engine/__init__.py)"
+            exit 1
+          fi
+
+      - name: Put uv and the backend inside the app
+        run: desktop/scripts/prepare-resources.sh "${{ steps.versions.outputs.wheel }}"
+
+      - name: Install Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Test the app's update protocol on macOS
+        working-directory: desktop/src-tauri
+        env:
+          E2E_WHEEL: ${{ github.workspace }}/${{ steps.versions.outputs.wheel }}
+          E2E_UV: ${{ github.workspace }}/desktop/src-tauri/resources/bin/uv
+        run: |
+          cargo test --lib
+          cargo test --test update_protocol -- --ignored --nocapture
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the app (Apple Silicon + Intel)
+        working-directory: desktop
+        run: |
+          npm ci
+          npx tauri build --target universal-apple-darwin
+
+      - name: Check the bundle
+        run: |
+          APP="$(ls -d desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)"
+          lipo -info "$APP/Contents/MacOS/"*
+          lipo -info "$APP/Contents/Resources/bin/uv"
+          ls -la "$APP/Contents/Resources/backend/"
+          codesign --verify --deep --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E "Identifier|Signature|Format"
+
+      - name: Collect release files
+        run: |
+          mkdir -p out
+          DMG="$(ls desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)"
+          cp "$DMG" out/Press-Engine-mac.dmg
+          cp "${{ steps.versions.outputs.wheel }}" out/
+          echo "${{ steps.versions.outputs.desktop }}" > out/desktop-version.txt
+          (cd out && shasum -a 256 * > SHA256SUMS.txt)
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: press-engine-mac
+          path: out/*
+
+      - name: Publish the release
+        if: github.ref_type == 'tag' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then TAG="v${{ steps.versions.outputs.backend }}"; fi
+          NOTES="**Mac:** download [Press-Engine-mac.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/Press-Engine-mac.dmg), open it and drag Press Engine into Applications. Apps already installed update themselves to this version.
+
+          Backend ${{ steps.versions.outputs.backend }} · Mac app ${{ steps.versions.outputs.desktop }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --title "Press Engine $TAG" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi

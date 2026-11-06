@@ -5,10 +5,11 @@ A personal CRM for finding, pitching and keeping track of music press, reviewers
 1. **Finds ~20 well-matched contacts a day.** It expands your seed artists into similar artists, searches the web, YouTube, TikTok (via web search) and Spotify playlists for people who cover them, reads each page with a small local model, finds a contact email, removes duplicates and ranks everyone by taste.
 2. **Sends ~20 cold emails a day from your own Gmail.** Sends are spaced at random through your sending hours, with a warm-up ramp, cooldowns and permanent opt-outs. Replies are detected and pushed to your phone.
 
-It has four parts:
+It has five parts:
 
 | Part | What it is |
 |---|---|
+| [`desktop/`](desktop) | The Mac app (Tauri). Runs everything in the background, shows the dashboard, updates itself |
 | [`backend/`](backend) | Python (FastAPI + SQLite). The discovery pipeline, scheduler, Gmail drip, JSON API and web dashboard |
 | [`extension/`](extension) | Chrome extension (Manifest V3). Adds a "Save to CRM" button on TikTok, Instagram and YouTube |
 | [`mobile/`](mobile) | Expo (React Native) app. Shows replies, today's sends and the DM queue, lets you reply, and receives shares from the TikTok/Instagram share sheet |
@@ -30,7 +31,56 @@ None of this has run against the real APIs yet (Last.fm, Brave/SerpAPI, YouTube,
 
 ---
 
-## Quick start (backend + dashboard)
+## Mac app
+
+**Download: [Press-Engine-mac.dmg](https://github.com/dylancleverdon/Press-engine/releases/latest/download/Press-Engine-mac.dmg)** (works on Apple Silicon and Intel Macs, macOS 12 or later)
+
+1. Open the DMG and drag **Press Engine** into Applications.
+2. Open it. The app isn't notarized by Apple yet, so the first time macOS says it can't check it for malware. Open **System Settings → Privacy & Security**, scroll down to the message about Press Engine, click **Open Anyway** and confirm. You only do this once.
+3. The first launch takes a minute or two and needs internet: the app downloads its own copy of Python and the libraries it needs. Nothing else on your Mac is touched.
+4. A welcome page asks for your name, band, time zone and seed artists, then shows the token for the Chrome extension and phone app.
+5. On **Connections**, add your API keys, upload your Google OAuth client and click **Connect Google** (see [Google setup](#google-setup-gmail--calendar)). If Ollama is installed, you can download the extraction model from the same page.
+
+Day to day:
+
+- **Closing the window doesn't stop Press Engine.** It keeps running from the menu bar, so discovery and the email drip carry on. Quit from the menu bar icon.
+- **It opens at login** by default, in the background, so sends continue after a restart. You can turn that off on Connections.
+- **To let the phone app connect**, tick "Let my phone connect" on Connections. The page then shows the address to use.
+
+### Automatic updates
+
+- **Checking.** The app checks for a new release every 6 hours, and when you choose **Check for Updates…** in the menu bar.
+- **Installing.** A new version is installed next to the current one, and Press Engine restarts with it in a few seconds. It always waits for an email that's mid-send.
+- **Rollback.** If the new version doesn't start, the app switches back to the previous one and never retries that version.
+- **Turning it off.** Automatic updates can be switched off on Connections → Updates.
+- **Updates to the app itself** (the window and menu bar part) are rare. When there is one, a banner links to the new DMG.
+- **Your data stays put** through updates, and even if you delete the app. Everything lives in `~/Library/Application Support/com.dylancleverdon.pressengine/`:
+  - `data/`: the database, Google token and API keys
+  - `logs/backend.log`: the log
+
+### Publishing a new version
+
+1. Bump `__version__` in `backend/press_engine/__init__.py`.
+2. Push a tag, for example `v0.2.1`:
+
+```bash
+git tag v0.2.1 && git push origin v0.2.1
+```
+
+[`.github/workflows/release-mac.yml`](.github/workflows/release-mac.yml) then:
+1. Runs the tests, including the app's update and rollback test on macOS.
+2. Builds the universal DMG.
+3. Publishes a GitHub release with the DMG, the backend wheel and `desktop-version.txt`.
+
+Installed apps pick it up within 6 hours.
+
+Bump the version in `desktop/src-tauri/tauri.conf.json` (and `Cargo.toml`) only when you change the app shell itself. That turns on the "new Mac app" banner.
+
+To get rid of the first-launch warning, sign and notarize the app with an Apple Developer ID ($99 a year). Add your certificate and Apple ID as repository secrets, and add Tauri's signing and notarization environment variables to the build step.
+
+---
+
+## Running without the Mac app (developers, other platforms)
 
 You need Python 3.11+ and, for extraction, [Ollama](https://ollama.com).
 
@@ -205,7 +255,17 @@ cd backend && . .venv/bin/activate
 pytest
 ```
 
-There are 43 tests covering discovery, extraction guards, resolution, dedupe and merges, scoring, queue and scheduling, Gmail sending, reply/bounce/opt-out detection, capture, calendar, the API, the dashboard and the scheduler.
+There are 55 backend tests covering discovery, extraction guards, resolution, dedupe and merges, scoring, queue and scheduling, Gmail sending, reply/bounce/opt-out detection, capture, calendar, the API, the dashboard and the scheduler.
+
+The Mac app's logic is tested with Rust unit tests. A separate end-to-end test covers first-run install, restart, promoting an update and rolling back a broken one, using the real backend wheel and uv. It needs network:
+
+```bash
+cd desktop/src-tauri && cargo test --lib
+```
+
+```bash
+E2E_WHEEL=$PWD/../../dist/press_engine-0.2.0-py3-none-any.whl E2E_UV=$(which uv) cargo test --test update_protocol -- --ignored
+```
 
 Code map (`backend/press_engine/`):
 - `discovery/`: Last.fm, search, page fetching and parsing, extraction, the press/YouTube/TikTok/playlist engines.
@@ -218,8 +278,8 @@ Code map (`backend/press_engine/`):
 
 ## Known gaps and next steps
 
-- **Schema migrations.** Tables are created with `create_all`. Add Alembic before the schema changes with real data in it.
+- **Schema migrations.** New tables and new columns are added automatically on startup, so updates can extend the schema. Renaming or dropping columns still needs a hand-written migration (Alembic).
 - **Email sources the APIs don't expose.** YouTube's "business email" button and Instagram business emails aren't available through any API. They're read from the channel description, or typed in through the extension's ✎ button or the app's capture screen.
 - **Selectors drift.** TikTok and Instagram change their page markup often. The extension's selectors live in `extension/collect.js`.
 - **Reply detection covers the last 90 days of sent threads.** Replies that arrive as a new thread are found by sender address within 21 days.
-- **One process.** The scheduler runs inside `press-engine serve` (or `press-engine worker`). Don't run both against the same database.
+- **One process.** The scheduler runs inside `press-engine serve` (or `press-engine worker`). Don't run both against the same database, or the Mac app and a terminal copy against the same data folder.

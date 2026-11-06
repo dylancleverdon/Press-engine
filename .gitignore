@@ -29,3 +29,8 @@ mobile/android/
 .idea/
 .vscode/
 expo-env.d.ts
+
+# Tauri (Mac app)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/backend/*.whl

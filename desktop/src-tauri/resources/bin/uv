@@ -1,0 +1,5 @@
+#!/bin/sh
+# Placeholder. Release builds replace this with the real uv binary:
+#   desktop/scripts/prepare-resources.sh <backend wheel>
+echo "This build of Press Engine doesn't include uv. Run desktop/scripts/prepare-resources.sh before building." >&2
+exit 1
