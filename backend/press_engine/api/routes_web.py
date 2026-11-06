@@ -385,7 +385,7 @@ SETTINGS_FORM = [
                  ("daily_dm_target", "DMs per day"), ("sending_paused", "Pause all sending")]),
     ("Cooldowns", [("cooldown_days", "Days before re-pitching a person/address"),
                    ("outlet_cooldown_days", "Days before pitching the same outlet again (0 = off)")]),
-    ("Discovery", [("daily_new_contacts_target", "New contacts per day (target)"), ("search_daily_budget", "Web searches per day (press)"),
+    ("Discovery", [("daily_new_contacts_target", "Stop press discovery after this many new contacts a day (0 = no limit)"), ("search_daily_budget", "Web searches per day (press)"),
                    ("youtube_daily_searches", "YouTube searches per day"), ("tiktok_daily_searches", "TikTok web searches per day"),
                    ("playlist_daily_searches", "Spotify playlist searches per day"), ("max_pages_per_run", "Max pages fetched per run"),
                    ("similar_per_seed", "Similar artists per seed"), ("search_freshness", "Search freshness"),

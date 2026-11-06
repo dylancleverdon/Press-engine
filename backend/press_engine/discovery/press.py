@@ -71,11 +71,15 @@ def run_press_discovery(
     blocked = {d.lower() for d in settings.blocked_domains}
     artists = artists if artists is not None else searchable_artists(session, "last_press_search_at", limit=max(1, budget // per_artist + 1))
 
+    target = settings.daily_new_contacts_target
     for artist in artists:
         if budget <= 0 or stats["pages_fetched"] >= settings.max_pages_per_run:
             break
+        if target and stats["new_people"] >= target:
+            stats["stopped_at_target"] = 1  # save the rest of the search budget for tomorrow
+            break
         for lang, query in query_plan(session, artist, settings, per_artist):
-            if budget <= 0:
+            if budget <= 0 or (target and stats["new_people"] >= target):
                 break
             budget -= 1
             run = SearchRun(engine="press", provider=svc.search.name, query=query, artist_id=artist.id, run_at=now)
