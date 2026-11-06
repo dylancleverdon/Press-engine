@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Local data: database, OAuth tokens, client secrets, env files
+backend/data/
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+google_token.json
+client_secret*.json
+
+# Node / Expo
+node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/ios/
+mobile/android/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
