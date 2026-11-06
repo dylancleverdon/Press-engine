@@ -99,6 +99,7 @@ def resolve_person(session: Session, svc, person: Person, *, now: datetime | Non
         if verified_personal_email(person):
             break
         url, mode = queue.pop(0)
+        session.commit()  # don't hold SQLite's write lock across the network call
         page = fetch_page(session, svc.fetcher, url, max_age_days=30, now=now)
         fetched += 1
         if not page.ok:

@@ -79,15 +79,18 @@ def run_press_discovery(
                 break
             budget -= 1
             run = SearchRun(engine="press", provider=svc.search.name, query=query, artist_id=artist.id, run_at=now)
-            session.add(run)
             try:
                 results = svc.search.search(query, count=10, freshness=settings.search_freshness, lang=lang)
             except SearchError as e:
                 run.error = str(e)[:500]
+                session.add(run)
+                session.commit()
                 stats["search_errors"] += 1
                 log.warning("search failed: %s", e)
                 continue
             run.result_count = len(results)
+            session.add(run)
+            session.commit()
             stats["searches"] += 1
             for result in results:
                 if stats["pages_fetched"] >= settings.max_pages_per_run:
@@ -103,19 +106,25 @@ def run_press_discovery(
 
 def process_url(session: Session, svc, url: str, artist_name: str | None, known: KnownArtists, stats: Counter,
                 *, now: datetime, source: str = "press_search", found_by_user_id: int | None = None) -> None:
+    # Commit before every network / model call so SQLite's write lock is never
+    # held while we wait (the drip sender runs in another thread).
     page = fetch_page(session, svc.fetcher, url, now=now)
     if page.extracted_at is not None:
+        session.commit()
         stats["already_seen"] += 1
         return
     stats["pages_fetched"] += 1
     page.extracted_at = now
     if not page.ok:
+        session.commit()
         stats["fetch_errors"] += 1
         return
     if not prefilter(page, artist_name, known):
         page.relevant = False
+        session.commit()
         stats["filtered"] += 1
         return
+    session.commit()
     extraction = extract_page(page, artist_name, known, svc.extract_llm)
     if extraction is None:
         stats["extraction_discarded"] += 1
@@ -123,9 +132,11 @@ def process_url(session: Session, svc, url: str, artist_name: str | None, known:
     page.extraction = extraction.model_dump(mode="json")
     page.relevant = extraction.relevant
     if not extraction.relevant:
+        session.commit()
         stats["not_relevant"] += 1
         return
     people, created = ingest_press_page(session, page, extraction, known, artist_hint=artist_name, source=source,
                                         found_by_user_id=found_by_user_id)
+    session.commit()
     stats["relevant_pages"] += 1
     stats["new_people"] += created
