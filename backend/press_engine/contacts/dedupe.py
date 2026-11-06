@@ -43,16 +43,20 @@ def merge_people(session: Session, keep: Person, drop: Person) -> Person:
     have = {(c.url, c.artist_name) for c in keep.coverage}
     for cov in list(drop.coverage):
         if (cov.url, cov.artist_name) in have:
-            session.delete(cov)
+            drop.coverage.remove(cov)  # orphan -> deleted
         else:
             cov.person = keep
             have.add((cov.url, cov.artist_name))
     keep_outlets = {link.outlet_id for link in keep.outlet_links}
     for link in list(drop.outlet_links):
-        if link.outlet_id not in keep_outlets:
-            session.add(PersonOutlet(person_id=keep.id, outlet_id=link.outlet_id, role=link.role))
+        if link.outlet_id in keep_outlets:
+            outlet = link.outlet
+            drop.outlet_links.remove(link)
+            if link in outlet.person_links:
+                outlet.person_links.remove(link)
+        else:
+            link.person = keep  # primary-key switch: UPDATE person_outlets SET person_id
             keep_outlets.add(link.outlet_id)
-        session.delete(link)
     for o in list(drop.outreach):
         o.person = keep
     for m in list(drop.meetings):

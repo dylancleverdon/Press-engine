@@ -134,7 +134,7 @@ def attach_email(session: Session, person: Person, outlet: Outlet | None, email:
                  verified: bool = True, page_is_personal: bool = False) -> Person:
     """Personal-looking address -> person identity; generic inbox -> outlet contact."""
     email = normalize_email(email)
-    personal = (matches_name(email, person.name) or page_is_personal or person.is_desk) and not is_generic(email)
+    personal = (matches_name(email, person.name) or page_is_personal) and not is_generic(email)
     if personal:
         return add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=verified)
     if outlet is not None and verified and is_generic(email):
