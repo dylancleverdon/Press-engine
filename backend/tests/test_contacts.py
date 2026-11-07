@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import select
 
@@ -99,7 +99,8 @@ def test_heuristic_scoring_prefers_multiple_matches(session):
 def test_llm_scoring_blends_and_validates_piece(session, services):
     seed = f.artist(session, "Athletic Progression", seed=True)
     p = f.person(session, "Writer One", outlet="a.dk", email="w@a.dk", covers=[seed])
-    score_heuristic(session)
+    now = datetime(2026, 11, 2, 7, 0)  # fixed, so recency (and the score) doesn't drift day to day
+    score_heuristic(session, now=now)
     url = p.coverage[0].url
 
     llm = FakeLLM(json_fn=lambda s, prompt, schema: {
@@ -107,17 +108,17 @@ def test_llm_scoring_blends_and_validates_piece(session, services):
         "piece_url": url})
     from press_engine.appsettings import load_settings
 
-    stats = score_with_llm(session, llm, load_settings(session))
+    stats = score_with_llm(session, llm, load_settings(session), now=now)
     assert stats["scored"] == 1
     assert p.llm_score == 90 and p.opener.startswith("Loved")
-    assert abs(p.taste_score - (0.6 * 0.9 + 0.4 * p.heuristic_score)) < 1e-6
+    assert p.taste_score == round(0.6 * 0.9 + 0.4 * p.heuristic_score, 4)  # scores are stored to 4 places
     assert "Athletic Progression" in llm.json_calls[0]
 
     # An opener pointing at a piece that doesn't exist is thrown away.
     p.llm_scored_at = None
     p.opener = None
     llm2 = FakeLLM(json_fn=lambda s, prompt, schema: {"score": 50, "reason": "x", "opener": "Made up", "piece_url": "https://nope"})
-    score_with_llm(session, llm2, load_settings(session))
+    score_with_llm(session, llm2, load_settings(session), now=now)
     assert p.opener is None and p.llm_score == 50
 
 
