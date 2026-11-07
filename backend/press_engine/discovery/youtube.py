@@ -135,7 +135,7 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
         person, created = upsert_creator(session, ref, name=snip.get("title"), kind=PersonKind.CREATOR,
                                          source_url=ref.url, found_via="youtube", followers=subs,
                                          country=snip.get("country"), language=(snip.get("defaultLanguage") or "")[:2] or None,
-                                         bio=snip.get("description"))
+                                         bio=snip.get("description"), artist=known.match(hits[ch["id"]][0][0]))
         if snip.get("customUrl", "").startswith("@"):
             person = add_identity(session, person, "youtube", snip["customUrl"].lower(), display=f"https://www.youtube.com/{snip['customUrl']}")
         person = ingest_profile_text(session, person, snip.get("description"), source_url=ref.url)

@@ -1,0 +1,5 @@
+{% set st = a.fit_stats or {} %}
+<td class="small">{{ st.get("contacts", 0) }} found · {{ st.get("pitched", 0) }} pitched · {{ st.get("replied", 0) }} replied
+  {% if st.get("reply_rate") is not none %}<b>({{ (st.reply_rate * 100)|round|int }}%)</b>{% endif %}</td>
+<td><span class="chip {{ 'ok' if a.fit_verdict == 'strong' else 'bad' if a.fit_verdict == 'weak' }}">{{ a.fit_verdict }}</span>
+  <div class="small muted">{{ st.get("why", "") }}</div></td>

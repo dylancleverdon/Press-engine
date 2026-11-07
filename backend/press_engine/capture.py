@@ -129,6 +129,10 @@ def capture(session: Session, http: httpx.Client, user: User, data: CaptureIn, *
         add_coverage(session, person, url=piece_url, artist_name=artist.name, artist=artist,
                      title=(data.caption or data.sound or "")[:300] or None, kind="tiktok" if "tiktok" in piece_url else "video",
                      source=via)
+    if person.discovered_artist_id is None:
+        first = next(iter(known.mentioned_in(text, limit=1)), None)
+        if first is not None:
+            person.discovered_artist_id = first.id
     if data.note:
         line = f"{now:%Y-%m-%d} {user.name}: {data.note.strip()}"
         person.notes = f"{person.notes}\n{line}" if person.notes else line

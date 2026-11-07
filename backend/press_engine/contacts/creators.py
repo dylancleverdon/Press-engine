@@ -17,7 +17,7 @@ URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.I)
 def upsert_creator(session: Session, ref: SocialRef, *, name: str | None, kind: str = PersonKind.CREATOR,
                    source_url: str | None = None, found_via: str | None = None, found_by_user_id: int | None = None,
                    followers: int | None = None, country: str | None = None, language: str | None = None,
-                   bio: str | None = None) -> tuple[Person, bool]:
+                   bio: str | None = None, artist=None) -> tuple[Person, bool]:
     """Find the person owning this profile, or create them. Returns (person, created)."""
     existing = find_identity(session, ref.type, ref.value)
     created = existing is None
@@ -28,6 +28,8 @@ def upsert_creator(session: Session, ref: SocialRef, *, name: str | None, kind: 
         session.add(person)
         session.flush()
         person = add_identity(session, person, ref.type, ref.value, display=ref.url, source_url=source_url)
+    if artist is not None and person.discovered_artist_id is None:
+        person.discovered_artist_id = artist.id  # which soundalike found them (fit tracking)
     if name and person.name.startswith("@") and not name.startswith("@"):
         person.name = name[:255]
     if followers is not None:

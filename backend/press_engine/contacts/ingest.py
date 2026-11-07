@@ -224,6 +224,10 @@ def ingest_press_page(
             attach_email(session, owner, outlet, email, source_url=url)
         elif is_generic(email):
             attach_email(session, people[0], outlet, email, source_url=url)
+    hint = known.match(artist_hint) if artist_hint else None
+    for person in people:
+        if hint is not None and person.discovered_artist_id is None:
+            person.discovered_artist_id = hint.id  # for fit tracking (soundalikes.py)
     return people, created
 
 

@@ -28,6 +28,16 @@
     {% endif %}
   </div>
 
+  <form method="post" action="/connections/sheet" class="panel">
+    <h3>Suggestions sheet (Google Sheets)</h3>
+    <p class="small">Suggestions and a soundalike report are kept in this Google Sheet.
+      {% if sheet_url %}<a href="{{ sheet_url }}" target="_blank" rel="noopener">Open it</a>.{% endif %}</p>
+    {% if google_connected and not sheets_scope %}<p class="warn small">Google was connected before Sheets access was added. Click <b>Disconnect</b> above, then <b>Connect Google</b> again and allow Sheets.</p>{% endif %}
+    <label for="sheet">Sheet link or ID</label>
+    <input id="sheet" name="sheet" type="text" value="{{ settings.suggestions_sheet_id }}">
+    <button style="margin-top: 8px">Save</button>
+  </form>
+
   <form method="post" action="/connections/keys" class="panel">
     <h3>API keys and models</h3>
     <p class="small muted">Stored only on this computer. Leave a key as it is to keep it; tick "clear" to remove it.</p>

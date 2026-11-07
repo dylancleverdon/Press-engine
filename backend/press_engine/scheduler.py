@@ -105,6 +105,9 @@ class Scheduler:
             if new_threads:
                 self._last["replies_new_threads"] = now
             run_job(self.db, self.svc, "replies", now=now, quiet=True, include_new_threads=new_threads)
+        if self.interval_due("sheet_sync", timedelta(minutes=10), now):
+            self._last["sheet_sync"] = now
+            run_job(self.db, self.svc, "sheet_sync", now=now, quiet=True)
 
     def _loop(self, tick: Callable[[], None], name: str) -> None:
         while not self._stop.is_set():

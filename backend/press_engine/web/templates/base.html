@@ -27,10 +27,11 @@
     <a href="/inbox" class="{{ 'active' if path.startswith('/inbox') }}">Inbox</a>
     <a href="/merges" class="{{ 'active' if path.startswith('/merges') }}">Duplicates</a>
     {% endif %}
-    <a href="/seeds" class="{{ 'active' if path.startswith('/seeds') }}">Seed artists</a>
+    <a href="/seeds" class="{{ 'active' if path.startswith('/seeds') }}">Soundalikes</a>
     <a href="/runs" class="{{ 'active' if path.startswith('/runs') }}">Runs</a>
     {% if user.is_owner %}<a href="/settings" class="{{ 'active' if path.startswith('/settings') }}">Settings</a>
     <a href="/connections" class="{{ 'active' if path.startswith('/connections') }}">Connections</a>{% endif %}
+    <a href="/suggestions" class="{{ 'active' if path.startswith('/suggestions') }}">Suggestions</a>
     <span class="who">{{ user.name }} · <a href="/logout">log out</a></span>
   </nav>
 </header>

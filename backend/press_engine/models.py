@@ -162,6 +162,8 @@ class Person(Base):
 
     found_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     found_via: Mapped[str | None] = mapped_column(String(40))
+    # The soundalike whose search turned this contact up (for fit tracking).
+    discovered_artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="SET NULL"), index=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -246,9 +248,23 @@ class Artist(Base):
     last_playlist_search_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Soundalike review: "auto" (confident match, used right away), "suggested" (waiting
+    # for D), "accepted", "rejected". Only auto/accepted artists are searched.
+    review: Mapped[str] = mapped_column(String(20), default="auto")
+    suggested_reason: Mapped[str | None] = mapped_column(Text)
+    evidence: Mapped[dict | None] = mapped_column(JSON)
+    # How well contacts found through this artist respond (see soundalikes.update_fit).
+    fit_verdict: Mapped[str] = mapped_column(String(20), default="learning")  # learning | strong | ok | weak
+    fit_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    fit_stats: Mapped[dict | None] = mapped_column(JSON)
+
     @property
     def is_seed(self) -> bool:
         return self.source == "manual"
+
+    @property
+    def searchable(self) -> bool:
+        return self.active and self.review in ("auto", "accepted") and (self.is_seed or self.similarity > 0)
 
 
 class ArtistSimilarity(Base):
@@ -460,6 +476,26 @@ class JobRun(Base):
     ok: Mapped[bool | None] = mapped_column(Boolean)
     stats: Mapped[dict | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class Suggestion(Base):
+    """Suggestions box. Mirrored to the Google Sheet, where they're reviewed."""
+
+    __tablename__ = "suggestions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    area: Mapped[str | None] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), default="new")
+    notes: Mapped[str | None] = mapped_column(Text)
+    adjustments: Mapped[str | None] = mapped_column(Text)
+    submitted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime)  # None = not in the sheet yet / local edits pending
+    dirty: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    submitted_by: Mapped[User | None] = relationship()
 
 
 class SettingRow(Base):

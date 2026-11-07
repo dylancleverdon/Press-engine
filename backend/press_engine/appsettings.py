@@ -128,7 +128,14 @@ class AppSettings(BaseModel):
     press_languages: list[str] = Field(default_factory=lambda: ["en", "da", "de", "nl", "sv", "ja"])
     press_queries: dict[str, list[str]] = Field(default_factory=lambda: dict(DEFAULT_PRESS_QUERIES))
     blocked_domains: list[str] = Field(default_factory=lambda: list(DEFAULT_BLOCKED_DOMAINS))
-    similar_per_seed: int = 25
+    similar_per_seed: int = 50
+    # Soundalikes (Seed artists page)
+    auto_accept_similarity: float = 0.5  # Last.fm match at/above which a soundalike is used without review
+    second_degree_per_run: int = 5  # soundalikes of soundalikes looked up per discovery run
+    cocoverage_min_contacts: int = 2  # suggest artists that this many of your contacts also covered
+    fit_min_pitches: int = 8  # pitches before judging a soundalike by its reply rate
+    # Google Sheet the suggestions box (and a soundalike report) syncs to
+    suggestions_sheet_id: str = "1C-Y3u0ixkD8KX19ns70GC3XA4tpZ1YvdF-HPskqIOTM"
     search_freshness: Literal["month", "year", "any"] = "year"
 
     # --- Scoring (spec §4.7) ---

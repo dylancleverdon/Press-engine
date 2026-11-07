@@ -31,13 +31,16 @@ LLM_WEIGHT = 0.6
 
 
 def artist_weight(artist: Artist | None) -> float:
-    if artist is None or not artist.active:
+    """How much covering this artist says about taste. Includes the artist's track
+    record: soundalikes whose contacts rarely reply count for less."""
+    if artist is None or not artist.active or artist.review in ("suggested", "rejected"):
         return 0.0
+    fit = artist.fit_factor or 1.0
     if artist.is_seed:
-        return 1.0
+        return 1.0 * fit
     if artist.similarity <= 0:
         return 0.0
-    return 0.3 + 0.7 * artist.similarity
+    return (0.3 + 0.7 * artist.similarity) * fit
 
 
 def taste_profile(person: Person, today: date | None = None) -> tuple[dict, float]:

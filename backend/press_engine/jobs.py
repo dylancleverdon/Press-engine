@@ -13,24 +13,17 @@ from sqlalchemy.orm import Session
 
 from .appsettings import AppSettings, load_settings
 from .db import Database
-from .models import Artist, JobRun
+from .models import JobRun
 from .util.timeutil import utcnow
 
 log = logging.getLogger(__name__)
 
 
 def job_expand(session: Session, svc, settings: AppSettings, now: datetime, *, force: bool = False) -> dict:
-    from .discovery.lastfm import expand_seeds
+    """Find soundalikes: Last.fm (seeds and a second hop), co-coverage, and fit tracking."""
+    from .soundalikes import discover_soundalikes
 
-    if svc.lastfm is None:
-        return {"skipped": "no Last.fm API key (PRESS_LASTFM_API_KEY)"}
-    week_ago = now - timedelta(days=7)
-    seeds = list(session.scalars(select(Artist).where(Artist.source == "manual", Artist.active.is_(True))))
-    if not force:
-        seeds = [s for s in seeds if s.expanded_at is None or s.expanded_at < week_ago]
-    if not seeds:
-        return {"skipped": "seeds were expanded this week"}
-    return expand_seeds(session, svc.lastfm, per_seed=settings.similar_per_seed, seeds=seeds, now=now)
+    return discover_soundalikes(session, svc, settings, now=now, force=force)
 
 
 def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *, sources: tuple[str, ...] | None = None) -> dict:
@@ -44,7 +37,7 @@ def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *,
     from .scoring import score_heuristic, score_with_llm
 
     sources = sources or ("press", "youtube", "tiktok", "playlists")
-    stats: dict = {"expand": job_expand(session, svc, settings, now)}
+    stats: dict = {"soundalikes": job_expand(session, svc, settings, now)}
     session.commit()
     engines: dict[str, Callable] = {
         "press": run_press_discovery, "youtube": run_youtube_discovery,
@@ -86,7 +79,14 @@ def job_replies(session: Session, svc, settings: AppSettings, now: datetime, *, 
     return poll_replies(session, svc, settings, now=now, include_new_threads=include_new_threads)
 
 
+def job_sheet_sync(session: Session, svc, settings: AppSettings, now: datetime) -> dict:
+    from .suggestions import sync
+
+    return sync(session, svc, settings, now=now)
+
+
 JOBS: dict[str, Callable] = {
+    "sheet_sync": job_sheet_sync,
     "expand": job_expand,
     "discover": job_discover,
     "queue": job_queue,
@@ -94,7 +94,7 @@ JOBS: dict[str, Callable] = {
     "replies": job_replies,
 }
 
-NOTABLE = ("sent", "reply", "bounce", "opt_out", "errors", "error", "cancelled", "rescheduled_late")
+NOTABLE = ("pushed", "pulled", "imported", "sent", "reply", "bounce", "opt_out", "errors", "error", "cancelled", "rescheduled_late")
 
 
 def run_job(db: Database, svc, name: str, *, now: datetime | None = None, quiet: bool = False, **kwargs) -> dict:

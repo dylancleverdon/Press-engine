@@ -144,7 +144,13 @@ def connections(request: Request, user: User = Depends(web_owner), session: Sess
     if desktop and desktop.get("host") == "0.0.0.0":
         addresses += [f"http://{ip}:{port}" for ip in runtime.lan_addresses()]
     google = svc.google
+    from ..outreach.google_auth import SHEETS_SCOPE
+    from ..sheets import sheet_id_from
+
+    sid = sheet_id_from(load_settings(session).suggestions_sheet_id or "")
     return page(request, "connections.html", user, session, groups=groups, sources=sources,
+                sheets_scope=bool(google and google.has_scope(SHEETS_SCOPE)),
+                sheet_url=f"https://docs.google.com/spreadsheets/d/{sid}/edit" if sid else None,
                 google_connected=bool(google and google.connected()),
                 google_has_client=bool(google and google.client_secrets.exists()),
                 google_flow=(google.flow_state if google else {"status": "idle"}),
@@ -171,6 +177,14 @@ async def save_keys(request: Request, user: User = Depends(web_owner), svc=Depen
         return _back("/connections", "Nothing changed")
     envfile.update(svc.cfg.env_path, changes)
     return _back("/connections", _restart_or_message(svc, f"Saved {len(changes)} setting(s)"))
+
+
+@router.post("/connections/sheet")
+def save_sheet(sheet: str = Form(""), user: User = Depends(web_owner), session: Session = Depends(get_db)):
+    from ..sheets import sheet_id_from
+
+    update_settings(session, suggestions_sheet_id=sheet_id_from(sheet))
+    return _back("/connections", "Sheet saved")
 
 
 @router.post("/connections/google/client")

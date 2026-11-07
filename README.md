@@ -150,6 +150,31 @@ It asks for the scopes `gmail.send`, `gmail.readonly` (for reply detection) and 
 
 ---
 
+## Soundalikes
+
+The **Soundalikes** page drives everything else: Press Engine looks for press and creators who cover these artists.
+
+- **Seeds** are the artists you say the band sounds like. Adding one looks up its soundalikes straight away.
+- **Suggestions** come from three places:
+  - Last.fm soundalikes of your seeds. Strong matches (50% or more similar) are used automatically; weaker ones wait for you.
+  - Soundalikes of your soundalikes (a second hop).
+  - Artists that several of your discovered contacts keep covering.
+
+  For each suggestion, choose **Use it**, **Make seed** (also looks up its own soundalikes) or **Not us**.
+- **Fit tracking.** Every contact remembers which soundalike found them. Once 8 of a soundalike's contacts have been pitched, its reply rate is compared with your overall rate:
+  - *strong* fits count more in taste scoring
+  - *weak* fits count less and are searched last
+  - **Stop & drop contacts** excludes a weak soundalike and deletes the contacts it found that you haven't contacted yet. People you've already pitched stay.
+
+## Suggestions box
+
+The **Suggestions** page sends ideas and feedback to the "Suggestions" tab of the Google Sheet "spread sheet for press engine".
+
+- **Reviewing in the sheet.** Mark each one new, accepted, in progress, shipped, rejected, needs info or duplicate, and add notes and adjustments. Changes come back into the app within 10 minutes.
+- **Adding in the sheet.** Rows you type straight into the sheet are imported.
+- **Soundalike report.** A "Soundalikes" tab is refreshed with how every soundalike performs.
+- **If you connected Google before this version,** reconnect once (Connections → Disconnect → Connect Google) to allow Sheets access. Gmail keeps working in the meantime.
+
 ## How a day works
 
 | When (your time zone) | What happens |

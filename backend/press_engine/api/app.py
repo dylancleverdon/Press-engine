@@ -76,5 +76,8 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
 
     app.include_router(api_router)
     app.include_router(desktop_router)
+    from .routes_soundalikes import router as soundalikes_router
+
+    app.include_router(soundalikes_router)
     app.include_router(web_router)
     return app

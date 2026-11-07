@@ -24,7 +24,6 @@ from ..jobs import JOBS
 from ..models import (
     STATUS_RANK,
     Artist,
-    ArtistSimilarity,
     DiscoveryLink,
     Identity,
     IdentityType,
@@ -346,22 +345,15 @@ def thread_reply(request: Request, oid: int, body: str = Form(...), user: User =
 
 # --- seeds ------------------------------------------------------------------------
 
-@router.get("/seeds", response_class=HTMLResponse)
-def seeds(request: Request, user: User = Depends(web_user), session: Session = Depends(get_db)):
-    seed_rows = list(session.scalars(select(Artist).where(Artist.source == "manual").order_by(Artist.active.desc(), Artist.name)))
-    similar = list(session.scalars(select(Artist).where(Artist.source == "expanded").order_by(Artist.similarity.desc())))
-    parents: dict[int, list[str]] = {}
-    names = {a.id: a.name for a in seed_rows}
-    for link in session.scalars(select(ArtistSimilarity)):
-        if link.seed_id in names:
-            parents.setdefault(link.artist_id, []).append(names[link.seed_id])
-    return page(request, "seeds.html", user, session, seeds=seed_rows, similar=similar, parents=parents)
-
-
 @router.post("/seeds")
-def seed_add(names: str = Form(...), user: User = Depends(web_owner), session: Session = Depends(get_db)):
+def seed_add(request: Request, names: str = Form(...), user: User = Depends(web_owner), session: Session = Depends(get_db),
+             svc=Depends(get_svc)):
     added = [add_seed(session, n).name for n in names.replace(",", "\n").splitlines() if n.strip()]
-    return back("/seeds", f"Added {', '.join(added)}. Expand them from the Runs page or wait for tonight's run.")
+    session.commit()
+    if svc.lastfm is not None:  # look for their soundalikes straight away
+        views.run_in_background(request.app.state.db, svc, "expand")
+        return back("/seeds", f"Added {', '.join(added)}. Looking for soundalikes now - refresh in a minute.")
+    return back("/seeds", f"Added {', '.join(added)}. Add a Last.fm key on Connections to find their soundalikes.")
 
 
 @router.post("/seeds/{aid}/remove")

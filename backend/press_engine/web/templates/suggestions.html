@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Suggestions · Press Engine{% endblock %}
+{% block content %}
+<div class="row"><h1 class="grow">Suggestions</h1>
+  {% if sheet_url %}<a class="button" href="{{ sheet_url }}" target="_blank" rel="noopener">Open the sheet</a>{% endif %}
+  {% if user.is_owner and sheet_ready %}<form method="post" action="/suggestions-sync" class="inline"><button>Sync now</button></form>{% endif %}</div>
+{% if not sheet_ready %}<div class="flash warn">Suggestions are saved here, but can't reach the Google Sheet yet.
+  {% if user.is_owner %}Reconnect Google on <a href="/connections">Connections</a> to allow access to Sheets.{% endif %}</div>{% endif %}
+
+<form method="post" action="/suggestions" class="panel">
+  <label for="text">What should Press Engine do better?</label>
+  <textarea id="text" name="text" required placeholder="An idea, a bug, a band it should look at, anything"></textarea>
+  <div class="row">
+    <select name="area" style="width:auto"><option value="">Area (optional)</option>
+      {% for a in areas %}<option>{{ a }}</option>{% endfor %}</select>
+    <button class="primary">Send suggestion</button>
+  </div>
+  <p class="small muted">Each suggestion goes into the "Suggestions" tab of the sheet, where it can be marked accepted, rejected, shipped and so on, with notes and adjustments. Changes made in the sheet show up here within 10 minutes.</p>
+</form>
+
+{% for s in rows %}
+<div class="panel">
+  <div class="row"><b class="grow">#{{ s.id }} {{ s.text }}</b><span class="chip {{ 'ok' if s.status in ('shipped', 'accepted') else 'bad' if s.status == 'rejected' }}">{{ s.status }}</span></div>
+  <div class="small muted">{{ local(s.created_at, "%d %b %Y") }}{% if s.submitted_by %} · {{ s.submitted_by.name }}{% endif %}{% if s.area %} · {{ s.area }}{% endif %}
+    · {{ "in the sheet" if s.synced_at and not s.dirty else "not synced yet" }}</div>
+  {% if user.is_owner %}
+  <form method="post" action="/suggestions/{{ s.id }}" style="margin-top: 8px">
+    <div class="row"><select name="status" style="width:auto">{% for st in statuses %}<option {{ 'selected' if st == s.status }}>{{ st }}</option>{% endfor %}</select></div>
+    <label>Notes</label><textarea name="notes" style="min-height: 50px">{{ s.notes or "" }}</textarea>
+    <label>Adjustments made</label><textarea name="adjustments" style="min-height: 50px">{{ s.adjustments or "" }}</textarea>
+    <button style="margin-top: 6px">Save</button>
+  </form>
+  {% else %}
+  {% if s.notes %}<p class="small"><b>Notes:</b> {{ s.notes }}</p>{% endif %}
+  {% if s.adjustments %}<p class="small"><b>Adjustments:</b> {{ s.adjustments }}</p>{% endif %}
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">No suggestions yet.</p>
+{% endfor %}
+{% endblock %}

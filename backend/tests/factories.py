@@ -13,6 +13,7 @@ def artist(session, name: str, *, seed: bool = False, similarity: float = 0.8) -
     a, _ = get_or_create_artist(session, name, source="manual" if seed else "expanded")
     if not seed:
         a.similarity = similarity
+        a.review = "auto"  # an accepted soundalike
     session.flush()
     return a
 

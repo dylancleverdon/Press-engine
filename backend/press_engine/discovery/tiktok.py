@@ -75,7 +75,7 @@ def run_tiktok_discovery(session: Session, svc, settings: AppSettings, *, now: d
                 continue
             ref = SocialRef("tiktok", handle.lower(), "@" + handle, f"https://www.tiktok.com/@{handle.lower()}")
             person, created = upsert_creator(session, ref, name=None, kind=PersonKind.CREATOR, source_url=r.url,
-                                             found_via="tiktok_search")
+                                             found_via="tiktok_search", artist=artist)
             text = f"{r.title} {r.snippet}"
             names = {artist.name} | {a.name for a in known.mentioned_in(text)}
             for name in names:

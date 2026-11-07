@@ -44,6 +44,16 @@ class Services:
             self._gmail = GmailClient(self.google.access_token, self.http)
         return self._gmail
 
+    def sheets(self):
+        """Google Sheets client, or None if Google isn't connected with the Sheets scope."""
+        from .outreach.google_auth import SHEETS_SCOPE
+
+        if self.google is None or not self.google.connected() or not self.google.has_scope(SHEETS_SCOPE):
+            return None
+        from .sheets import SheetsClient
+
+        return SheetsClient(self.google.access_token, self.http)
+
     def calendar(self):
         if self._calendar is None and self.google is not None and self.google.connected():
             from .calendar import CalendarClient

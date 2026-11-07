@@ -13,7 +13,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/spreadsheets",  # suggestions box sheet
 ]
+SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
 
 class GoogleAuthError(RuntimeError):
@@ -30,13 +32,24 @@ class GoogleAuth:
     def connected(self) -> bool:
         return self.token_file.exists()
 
+    def granted_scopes(self) -> set[str]:
+        try:
+            return set(json.loads(self.token_file.read_text()).get("scopes") or [])
+        except (OSError, ValueError):
+            return set()
+
+    def has_scope(self, scope: str) -> bool:
+        return scope in self.granted_scopes()
+
     def _load(self):
         from google.oauth2.credentials import Credentials
 
         if self._creds is None:
             if not self.token_file.exists():
                 raise GoogleAuthError("Google is not connected. Run: press-engine google-auth")
-            self._creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
+            # Use the scopes the user actually granted: asking for new ones on refresh
+            # (e.g. after an update added Sheets) makes Google reject the refresh.
+            self._creds = Credentials.from_authorized_user_file(str(self.token_file))
         return self._creds
 
     def access_token(self) -> str:

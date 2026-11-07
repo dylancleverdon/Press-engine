@@ -125,7 +125,8 @@ def run_playlist_discovery(session: Session, svc, settings: AppSettings, *, now:
             url = (pl.get("external_urls") or {}).get("spotify") or f"https://open.spotify.com/playlist/{pl['id']}"
             ref = SocialRef("spotify", owner["id"], owner.get("display_name") or owner["id"], f"https://open.spotify.com/user/{owner['id']}")
             person, created = upsert_creator(session, ref, name=owner.get("display_name") or pl.get("name"),
-                                             kind=PersonKind.CURATOR, source_url=url, found_via="spotify_playlist")
+                                             kind=PersonKind.CURATOR, source_url=url, found_via="spotify_playlist",
+                                             artist=artist)
             person = ingest_profile_text(session, person, desc, source_url=url)
             for a in {a.id: a for a in matched}.values():
                 add_coverage(session, person, url=url, artist_name=a.name, artist=a, title=pl.get("name"), kind="playlist",

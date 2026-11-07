@@ -79,8 +79,10 @@ def get_or_create_artist(session: Session, name: str, *, source: str = "manual")
             artist.source = "manual"  # promoting a similar artist to a seed
             artist.similarity = 1.0
             artist.active = True
+            artist.review = "accepted"
         return artist, False
-    artist = Artist(name=name.strip(), name_key=key, source=source, similarity=1.0 if source == "manual" else 0.0)
+    artist = Artist(name=name.strip(), name_key=key, source=source, similarity=1.0 if source == "manual" else 0.0,
+                    review="accepted" if source == "manual" else "suggested")
     session.add(artist)
     session.flush()
     return artist, True
@@ -100,13 +102,15 @@ def remove_seed(session: Session, artist: Artist) -> None:
     recompute_similarities(session)
 
 
-def expand_seeds(session: Session, lastfm: LastFM, *, per_seed: int = 25, seeds: list[Artist] | None = None,
-                 now: datetime | None = None) -> dict:
+def expand_seeds(session: Session, lastfm: LastFM, *, per_seed: int = 50, seeds: list[Artist] | None = None,
+                 now: datetime | None = None, auto_accept: float = 0.5) -> dict:
+    """First-degree soundalikes of each seed. Strong matches (Last.fm match >= auto_accept)
+    are used right away; weaker ones wait on the Soundalikes page as suggestions."""
     now = now or utcnow()
     seeds = seeds if seeds is not None else list(
         session.scalars(select(Artist).where(Artist.source == "manual", Artist.active.is_(True)))
     )
-    stats = {"seeds": 0, "similar": 0, "new_artists": 0, "errors": []}
+    stats = {"seeds": 0, "similar": 0, "new_artists": 0, "suggested": 0, "errors": []}
     for seed in seeds:
         try:
             similar = lastfm.similar(seed.name, limit=per_seed)
@@ -117,35 +121,69 @@ def expand_seeds(session: Session, lastfm: LastFM, *, per_seed: int = 25, seeds:
             seed.tags = lastfm.top_tags(seed.name)
         stats["seeds"] += 1
         for s in similar:
-            artist, created = get_or_create_artist(session, s.name, source="expanded")
-            if artist.id == seed.id:
+            artist, created = link_similar(session, seed, s, auto=s.match >= auto_accept,
+                                           reason=f"Last.fm: {round(s.match * 100)}% similar to {seed.name}")
+            if artist is None:
                 continue
             stats["new_artists"] += int(created)
-            if s.mbid and not artist.mbid:
-                artist.mbid = s.mbid
-            if s.url and not artist.lastfm_url:
-                artist.lastfm_url = s.url
-            link = session.get(ArtistSimilarity, (seed.id, artist.id))
-            if link:
-                link.match = s.match
-            else:
-                session.add(ArtistSimilarity(seed_id=seed.id, artist_id=artist.id, match=s.match))
+            stats["suggested"] += int(created and artist.review == "suggested")
             stats["similar"] += 1
         seed.expanded_at = now
     session.flush()
-    recompute_similarities(session)
+    recompute_similarities(session, auto_accept=auto_accept)
     return stats
 
 
-def recompute_similarities(session: Session) -> None:
-    """similarity(expanded artist) = best Last.fm match against any *active* seed (0 if none)."""
-    active_seeds = {a.id for a in session.scalars(select(Artist).where(Artist.source == "manual", Artist.active.is_(True)))}
-    best: dict[int, float] = {}
-    for link in session.scalars(select(ArtistSimilarity)):
-        if link.seed_id in active_seeds:
-            best[link.artist_id] = max(best.get(link.artist_id, 0.0), link.match)
-    for artist in session.scalars(select(Artist).where(Artist.source == "expanded")):
-        artist.similarity = best.get(artist.id, 0.0)
+def link_similar(session: Session, parent: Artist, s: SimilarArtist, *, auto: bool, reason: str) -> tuple[Artist | None, bool]:
+    artist, created = get_or_create_artist(session, s.name, source="expanded")
+    if artist.id == parent.id:
+        return None, False
+    if created:
+        artist.review = "auto" if auto else "suggested"
+        artist.suggested_reason = reason
+    evidence = dict(artist.evidence or {})
+    evidence.setdefault("lastfm", {})[parent.name] = round(s.match, 3)
+    artist.evidence = evidence
+    if s.mbid and not artist.mbid:
+        artist.mbid = s.mbid
+    if s.url and not artist.lastfm_url:
+        artist.lastfm_url = s.url
+    link = session.get(ArtistSimilarity, (parent.id, artist.id))
+    if link:
+        link.match = s.match
+    else:
+        session.add(ArtistSimilarity(seed_id=parent.id, artist_id=artist.id, match=s.match))
+    return artist, created
+
+
+SECOND_DEGREE_DISCOUNT = 0.8
+
+
+def recompute_similarities(session: Session, *, auto_accept: float | None = None) -> None:
+    """similarity(expanded artist) = best match against an active seed, or (second hop)
+    parent similarity x match x 0.8 through an accepted soundalike. 0 if no path."""
+    artists = {a.id: a for a in session.scalars(select(Artist))}
+    links = list(session.scalars(select(ArtistSimilarity)))
+    first: dict[int, float] = {}
+    for link in links:
+        parent = artists.get(link.seed_id)
+        if parent is not None and parent.is_seed and parent.active:
+            first[link.artist_id] = max(first.get(link.artist_id, 0.0), link.match)
+    best = dict(first)
+    for link in links:
+        parent = artists.get(link.seed_id)
+        if parent is None or parent.is_seed or not parent.searchable or first.get(parent.id, 0) <= 0:
+            continue
+        value = first[parent.id] * link.match * SECOND_DEGREE_DISCOUNT
+        if value > best.get(link.artist_id, 0.0):
+            best[link.artist_id] = value
+    for artist in artists.values():
+        if artist.source != "expanded":
+            continue
+        artist.similarity = round(best.get(artist.id, 0.0), 4)
+        # A new seed can make a waiting suggestion a confident match.
+        if auto_accept is not None and artist.review == "suggested" and first.get(artist.id, 0) >= auto_accept:
+            artist.review = "auto"
     session.flush()
 
 
@@ -154,8 +192,10 @@ def searchable_artists(session: Session, order_field: str, limit: int) -> list[A
     col = getattr(Artist, order_field)
     rows = session.scalars(
         select(Artist)
-        .where(Artist.active.is_(True), (Artist.source == "manual") | (Artist.similarity > 0))
-        .order_by(col.is_not(None), col, Artist.similarity.desc())
+        .where(Artist.active.is_(True), Artist.review.in_(("auto", "accepted")),
+               (Artist.source == "manual") | (Artist.similarity > 0))
+        # Soundalikes whose contacts don't respond are searched last.
+        .order_by(Artist.fit_verdict == "weak", col.is_not(None), col, Artist.similarity.desc())
         .limit(limit)
     )
     return list(rows)
