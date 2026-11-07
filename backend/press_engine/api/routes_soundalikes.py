@@ -45,11 +45,19 @@ def seeds(request: Request, user: User = Depends(web_user), session: Session = D
     in_use.sort(key=lambda a: ({"weak": 0, "strong": 1, "ok": 2, "learning": 3}.get(a.fit_verdict, 4), -a.similarity))
     excluded = [a for a in artists if not a.is_seed and (not a.active or a.review == "rejected")]
     return page(request, "seeds.html", user, session, seeds=seed_rows, suggested=suggested, in_use=in_use,
-                excluded=excluded, parents=parents, lastfm=svc.lastfm is not None)
+                excluded=excluded, parents=parents, lastfm=svc.lastfm is not None,
+                looking="expand" in views.running_jobs())
+
+
+@router.get("/jobs/running")
+def jobs_running(user: User = Depends(web_user)):
+    """Polled by pages that refresh themselves when a background job finishes."""
+    return {"running": views.running_jobs()}
 
 
 @router.post("/artists/{aid}/review")
-def review(aid: int, decision: str = Form(...), user: User = Depends(web_owner), session: Session = Depends(get_db)):
+def review(request: Request, aid: int, decision: str = Form(...), user: User = Depends(web_owner),
+           session: Session = Depends(get_db), svc=Depends(get_svc)):
     _, back = _page()
     a = _artist(session, aid)
     if decision == "accept":
@@ -59,7 +67,12 @@ def review(aid: int, decision: str = Form(...), user: User = Depends(web_owner),
         from ..discovery.lastfm import add_seed
 
         add_seed(session, a.name)
-        msg = f"{a.name} is now a seed; its own soundalikes are looked up on the next run"
+        session.commit()
+        if svc.lastfm is not None:  # look up its own soundalikes straight away
+            views.run_in_background(request.app.state.db, svc, "expand")
+            msg = f"{a.name} is now a seed. Looking up its soundalikes now"
+        else:
+            msg = f"{a.name} is now a seed. Add a Last.fm key on Connections to look up its soundalikes"
     elif decision == "restore":
         a.active = True
         a.review = "accepted"

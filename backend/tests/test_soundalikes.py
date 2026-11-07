@@ -276,3 +276,41 @@ def test_pages_render(db, services, sheet, session):
     r = client.post("/suggestions", data={"text": "More Dutch press", "area": "Finding press"}, follow_redirects=False)
     assert "Thanks" in unquote(r.headers["location"])
     assert "Open it" in client.get("/connections").text
+
+
+def test_make_seed_from_in_use_refresh_and_auto_reload(db, services, session, lastfm):
+    import time as _time
+
+    from fastapi.testclient import TestClient
+
+    from press_engine.api import views
+    from press_engine.api.app import create_app
+    from press_engine.api.deps import create_user
+
+    session.commit()
+    with db.session() as s:
+        _, token = create_user(s, "D", role="owner")
+        add_seed(s, "Athletic Progression")
+        mh = f.artist(s, "Mammal Hands", similarity=1.0)
+        mh_id = mh.id
+    client = TestClient(create_app(db=db, svc=services, start_scheduler=False))
+    client.post("/login", data={"token": token, "next": "/"})
+    page = client.get("/seeds")
+    assert page.text.count('value="seed"') >= 1 and 'aria-label="Refresh this page"' in page.text  # Make seed next to Exclude
+
+    r = client.post(f"/artists/{mh_id}/review", data={"decision": "seed"}, follow_redirects=False)
+    assert "Looking up its soundalikes" in unquote(r.headers["location"])
+    for _ in range(50):  # the background lookup finishes and the page stops polling
+        if "expand" not in client.get("/jobs/running").json()["running"]:
+            break
+        _time.sleep(0.1)
+    assert client.get("/jobs/running").json() == {"running": []}
+    with db.session() as s:
+        assert s.get(Artist, mh_id).is_seed
+        assert s.scalar(select(Artist).where(Artist.name == "Portico Quartet")) is not None  # its own soundalikes
+
+    views.RUNNING["expand"] = 1  # while a lookup runs, the page says so and polls
+    try:
+        assert "refreshes by itself" in client.get("/seeds").text
+    finally:
+        views.RUNNING.clear()

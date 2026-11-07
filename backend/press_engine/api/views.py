@@ -184,10 +184,31 @@ def sound_pages(session: Session, limit: int = 30) -> list[DiscoveryLink]:
     ))
 
 
+RUNNING: dict[str, int] = {}  # jobs started from the dashboard that haven't finished yet
+_running_lock = threading.Lock()
+
+
 def run_in_background(db, svc, job: str, **kwargs) -> None:
     from ..jobs import run_job
 
-    threading.Thread(target=run_job, args=(db, svc, job), kwargs=kwargs, daemon=True, name=f"job-{job}").start()
+    with _running_lock:
+        RUNNING[job] = RUNNING.get(job, 0) + 1
+
+    def go() -> None:
+        try:
+            run_job(db, svc, job, **kwargs)
+        finally:
+            with _running_lock:
+                RUNNING[job] -= 1
+                if RUNNING[job] <= 0:
+                    del RUNNING[job]
+
+    threading.Thread(target=go, daemon=True, name=f"job-{job}").start()
+
+
+def running_jobs() -> list[str]:
+    with _running_lock:
+        return sorted(RUNNING)
 
 
 def contact_line(person: Person, settings: AppSettings) -> str:

@@ -7,6 +7,23 @@
   Strong Last.fm matches are used straight away; everything else waits below for you to accept or reject.
   {% if not lastfm %}<b>Add a Last.fm key on <a href="/connections">Connections</a> to find soundalikes.</b>{% endif %}</p>
 
+{% if looking %}
+<div class="flash" id="looking">Looking for soundalikes… this page refreshes by itself when it's done.</div>
+<script>
+  // Reload once the soundalike lookup started from this page has finished.
+  (function poll() {
+    setTimeout(async () => {
+      try {
+        const r = await fetch("/jobs/running", { credentials: "same-origin" });
+        const { running } = await r.json();
+        if (!running.includes("expand")) { location.replace("/seeds"); return; }
+      } catch (e) { /* keep trying */ }
+      poll();
+    }, 3000);
+  })();
+</script>
+{% endif %}
+
 {% if user.is_owner %}
 <form method="post" action="/seeds" class="panel row">
   <input type="text" name="names" placeholder="Add seed artists (comma separated)" class="grow">
@@ -57,7 +74,9 @@
     <td>{{ (a.similarity * 100)|round|int }}%</td>
     {% include "_fit_cells.html" %}
     <td>{% if user.is_owner %}
-      <form method="post" action="/artists/{{ a.id }}/review" class="inline"><button name="decision" value="reject">Exclude</button></form>
+      <form method="post" action="/artists/{{ a.id }}/review" class="inline">
+        <button name="decision" value="seed" title="Make it a seed and look up its own soundalikes">Make seed</button>
+        <button name="decision" value="reject">Exclude</button></form>
       {% set contacts = (a.fit_stats or {}).get("contacts", 0) %}
       {% if contacts %}<form method="post" action="/artists/{{ a.id }}/prune" class="inline"
         data-confirm="Stop using {{ a.name }} and delete the contacts it found that you haven't contacted yet? Contacts you've already pitched are kept."><button class="danger">Stop &amp; drop contacts</button></form>{% endif %}
@@ -71,7 +90,8 @@
 <table>
   {% for a in excluded %}
   <tr style="opacity:.6"><td>{{ a.name }}</td><td class="small">{{ (a.fit_stats or {}).get("why", "") }}</td>
-    <td>{% if user.is_owner %}<form method="post" action="/artists/{{ a.id }}/review" class="inline"><button name="decision" value="restore">Restore</button></form>{% endif %}</td></tr>
+    <td>{% if user.is_owner %}<form method="post" action="/artists/{{ a.id }}/review" class="inline"><button name="decision" value="restore">Restore</button>
+      <button name="decision" value="seed">Make seed</button></form>{% endif %}</td></tr>
   {% endfor %}
 </table>
 {% endif %}

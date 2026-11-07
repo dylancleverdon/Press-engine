@@ -6,6 +6,12 @@
   <title>{% block title %}Press Engine{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
+  <script>
+    // ⌘R / Ctrl+R / F5 reload the page (the Mac app's window has no reload button of its own).
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "F5" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r")) { e.preventDefault(); location.reload(); }
+    });
+  </script>
   {% if desktop %}<script>
     // In the Mac app, links that would open a new tab go through the app, which opens
     // anything outside Press Engine in your normal browser.
@@ -32,6 +38,7 @@
     {% if user.is_owner %}<a href="/settings" class="{{ 'active' if path.startswith('/settings') }}">Settings</a>
     <a href="/connections" class="{{ 'active' if path.startswith('/connections') }}">Connections</a>{% endif %}
     <a href="/suggestions" class="{{ 'active' if path.startswith('/suggestions') }}">Suggestions</a>
+    <button type="button" class="refresh" onclick="location.reload()" title="Refresh this page (⌘R)" aria-label="Refresh this page">↻</button>
     <span class="who">{{ user.name }} · <a href="/logout">log out</a></span>
   </nav>
 </header>

@@ -12,7 +12,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
 header nav { max-width: 1180px; margin: 0 auto; display: flex; gap: 4px; align-items: center; padding: 8px 16px; flex-wrap: wrap; }
-header nav a { padding: 6px 10px; border-radius: 8px; color: var(--text); }
+header nav a { padding: 6px 8px; border-radius: 8px; color: var(--text); }
 header nav a.active, header nav a:hover { background: var(--chip); text-decoration: none; }
 header .brand { font-weight: 700; margin-right: 12px; }
 header .who { margin-left: auto; color: var(--muted); font-size: 13px; }
@@ -59,3 +59,5 @@ pre.code { background: var(--chip); padding: 10px; border-radius: 8px; overflow-
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; width: min(420px, calc(100% - 32px)); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
 .modal p { margin: 0 0 12px; }
+header nav .refresh { margin-left: auto; padding: 2px 9px; font-size: 16px; line-height: 1.4; }
+header nav .refresh + .who { margin-left: 12px; }
