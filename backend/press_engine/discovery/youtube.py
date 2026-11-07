@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import httpx
@@ -33,13 +34,30 @@ class YouTubeError(RuntimeError):
 
 
 class YouTubeClient:
-    def __init__(self, api_key: str, http: httpx.Client):
+    """YouTube Data API v3, authorised by an API key or by the Google sign-in (OAuth token)."""
+
+    def __init__(self, api_key: str | None, http: httpx.Client, *, token: Callable[[], str] | None = None):
+        if not api_key and token is None:
+            raise ValueError("YouTubeClient needs an API key or a token provider")
         self.api_key = api_key
+        self.token = token
         self.http = http
 
+    @property
+    def via(self) -> str:
+        return "API key" if self.api_key else "Google sign-in"
+
     def _get(self, path: str, **params) -> dict:
+        headers = {}
+        if self.api_key:
+            params["key"] = self.api_key
+        else:
+            try:
+                headers["Authorization"] = f"Bearer {self.token()}"
+            except Exception as e:  # GoogleAuthError, refresh failures
+                raise YouTubeError(f"Google sign-in for YouTube failed: {e}") from e
         try:
-            r = self.http.get(f"{API}/{path}", params={**params, "key": self.api_key})
+            r = self.http.get(f"{API}/{path}", params=params, headers=headers)
         except httpx.HTTPError as e:
             raise YouTubeError(f"YouTube unreachable: {e}") from e
         if r.status_code != 200:
@@ -78,8 +96,9 @@ def _item_url(item: dict) -> tuple[str, str] | None:
 
 def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: datetime | None = None, per_artist: int = 2) -> dict:
     now = now or utcnow()
-    if svc.youtube is None:
-        return {"skipped": "no YouTube API key (PRESS_YOUTUBE_API_KEY)"}
+    yt = svc.youtube_client()
+    if yt is None:
+        return {"skipped": "YouTube not connected: reconnect Google (allow YouTube) or add a YouTube API key"}
     budget = settings.youtube_daily_searches - searches_since(session, "youtube", now - timedelta(hours=24))
     if budget <= 0:
         return {"skipped": "daily YouTube search budget used up"}
@@ -98,7 +117,7 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
             budget -= 1
             run = SearchRun(engine="youtube", provider="youtube", query=q, artist_id=artist.id, run_at=now)
             try:
-                items = svc.youtube.search(q, kind=kind, published_after=now - timedelta(days=730))
+                items = yt.search(q, kind=kind, published_after=now - timedelta(days=730))
             except YouTubeError as e:
                 run.error = str(e)[:500]
                 session.add(run)
@@ -119,7 +138,7 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
     if not hits:
         return dict(stats)
     try:
-        channels = svc.youtube.channels(list(hits))
+        channels = yt.channels(list(hits))
     except YouTubeError as e:
         return {**stats, "error": str(e)}
     for ch in channels:

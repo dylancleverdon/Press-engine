@@ -1,4 +1,4 @@
-"""Google OAuth for Gmail + Calendar (installed-app flow, token stored on disk)."""
+"""Google OAuth for Gmail, Calendar, Sheets and YouTube (installed-app flow, token stored on disk)."""
 
 from __future__ import annotations
 
@@ -14,8 +14,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/spreadsheets",  # suggestions box sheet
+    "https://www.googleapis.com/auth/youtube.readonly",  # creator discovery, read-only
 ]
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 
 
 class GoogleAuthError(RuntimeError):

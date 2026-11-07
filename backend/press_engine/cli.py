@@ -250,7 +250,7 @@ def status():
     checks = {
         "database": cfg.resolved_database_url,
         "last.fm": bool(svc.lastfm), "web search": svc.search.name if svc.search else False,
-        "youtube": bool(svc.youtube), "spotify": bool(svc.spotify),
+        "youtube": (svc.youtube_client().via if svc.youtube_client() else False), "spotify": bool(svc.spotify),
         "extraction model": svc.extract_llm.name if svc.extract_llm else "heuristic only",
         "scoring model": svc.score_llm.name if svc.score_llm else "heuristic only",
         "google connected": bool(svc.google and svc.google.connected()),

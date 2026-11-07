@@ -5,15 +5,20 @@
 <div class="cols">
 <div>
   <div class="panel">
-    <h3>Google (send from your Gmail, calendar invites)</h3>
+    <h3>Google (Gmail sending, calendar invites, Sheets, YouTube search)</h3>
     {% if google_connected %}
       <p class="ok">Connected.</p>
+      {% if not youtube_scope %}
+      <p class="warn small">YouTube access isn't allowed yet, so the YouTube engine is off. Reconnect and tick YouTube on Google's page.
+        If Google says the API is disabled, enable <b>YouTube Data API v3</b> in the same Cloud project first.</p>
+      <form method="post" action="/connections/google/connect" class="inline"><button class="primary">Reconnect Google</button></form>
+      {% endif %}
       <form method="post" action="/connections/google/disconnect" class="inline" data-confirm="Disconnect Google? Sending stops until you reconnect."><button class="danger">Disconnect</button></form>
     {% else %}
       {% if google_flow.status == "waiting" %}<p class="warn">Waiting for you to finish signing in in your browser… <a href="/connections">refresh</a></p>{% endif %}
       {% if google_flow.status == "error" %}<p class="bad small">{{ google_flow.error }}</p>{% endif %}
       <ol class="small">
-        <li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, create a project and enable the <b>Gmail API</b> and <b>Google Calendar API</b>.</li>
+        <li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, create a project and enable the <b>Gmail API</b>, <b>Google Calendar API</b>, <b>Google Sheets API</b> and <b>YouTube Data API v3</b>.</li>
         <li>Set up the <b>OAuth consent screen</b> (External), add yourself as a user, and set it to <b>In production</b>. In "Testing" Google signs you out every 7 days.</li>
         <li>Create an <b>OAuth client ID</b> of type <b>Desktop app</b>, download the JSON file and upload it here.</li>
       </ol>

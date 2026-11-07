@@ -124,3 +124,41 @@ def test_calendar_meeting_with_meet_link(session, services, router):
     body = __import__("json").loads(captured[0].content)
     assert body["attendees"] == [{"email": "mette@jazznyt.dk"}]
     assert captured[0].url.params["conferenceDataVersion"] == "1"
+
+
+def test_youtube_uses_google_sign_in_when_no_key(session, services):
+    import httpx
+
+    from press_engine.outreach.google_auth import YOUTUBE_SCOPE
+
+    class FakeGoogle:
+        def __init__(self, scopes):
+            self.scopes = scopes
+
+        def connected(self):
+            return True
+
+        def has_scope(self, s):
+            return s in self.scopes
+
+        def access_token(self):
+            return "tok123"
+
+    services.youtube = None
+    services.google = FakeGoogle(set())
+    assert services.youtube_client() is None
+    assert "skipped" in run_youtube_discovery(session, services, load_settings(session), now=NOW)
+
+    services.google = FakeGoogle({YOUTUBE_SCOPE})
+    yt = services.youtube_client()
+    assert yt is not None and yt.via == "Google sign-in"
+    seen = {}
+
+    def handler(request):
+        seen["auth"] = request.headers.get("authorization")
+        seen["key"] = request.url.params.get("key")
+        return httpx.Response(200, json={"items": []})
+
+    services.http = httpx.Client(transport=httpx.MockTransport(handler))
+    services.youtube_client().search("x")
+    assert seen == {"auth": "Bearer tok123", "key": None}

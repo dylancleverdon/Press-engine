@@ -54,6 +54,18 @@ class Services:
 
         return SheetsClient(self.google.access_token, self.http)
 
+    def youtube_client(self):
+        """YouTube via the API key if one is set, else via the Google sign-in (youtube.readonly)."""
+        if self.youtube is not None:
+            return self.youtube
+        from .outreach.google_auth import YOUTUBE_SCOPE
+
+        if self.google is None or not self.google.connected() or not self.google.has_scope(YOUTUBE_SCOPE):
+            return None
+        from .discovery.youtube import YouTubeClient
+
+        return YouTubeClient(None, self.http, token=self.google.access_token)
+
     def calendar(self):
         if self._calendar is None and self.google is not None and self.google.connected():
             from .calendar import CalendarClient
