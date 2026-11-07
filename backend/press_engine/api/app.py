@@ -11,6 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+
+class NoCacheStatic(StaticFiles):
+    """Static files the browser must revalidate, so an update's CSS/JS shows up at once."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
 from .. import __version__
 from ..config import get_config
 from ..db import Database, get_database
@@ -52,7 +61,7 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
-    app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+    app.mount("/static", NoCacheStatic(directory=WEB_DIR / "static"), name="static")
 
     @app.exception_handler(LoginRequired)
     async def _login(request: Request, exc: LoginRequired):

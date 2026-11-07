@@ -128,3 +128,14 @@ def test_discovery_pages_nav_and_vetting(db, services, session, youtube):
     r = client.post("/discovery/youtube/run", follow_redirects=False)
     assert "Running the YouTube engine" in unquote(r.headers["location"])
     assert 'class="grow pre-wrap"' in client.get("/suggestions").text  # suggestion line breaks shown
+
+
+def test_static_assets_are_versioned_and_revalidated(db, services):
+    from fastapi.testclient import TestClient
+
+    from press_engine import __version__
+    from press_engine.api.app import create_app
+
+    client = TestClient(create_app(db=db, svc=services, start_scheduler=False))
+    assert f"/static/style.css?v={__version__}" in client.get("/login").text
+    assert client.get("/static/style.css").headers["cache-control"] == "no-cache"

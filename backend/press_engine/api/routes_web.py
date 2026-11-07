@@ -55,6 +55,8 @@ def _local(dt: datetime | None, tz_name: str, fmt: str = "%a %d %b %H:%M") -> st
     return to_local(dt, get_tz(tz_name)).strftime(fmt) if dt else ""
 
 
+# Versioned asset URLs: the Mac app's web view caches /static files across updates.
+templates.env.globals["asset_v"] = __import__("press_engine").__version__
 templates.env.filters["pct"] = lambda v: f"{round((v or 0) * 100)}"
 
 
