@@ -289,7 +289,7 @@ cd desktop/src-tauri && cargo test --lib
 ```
 
 ```bash
-E2E_WHEEL=$PWD/../../dist/press_engine-0.2.0-py3-none-any.whl E2E_UV=$(which uv) cargo test --test update_protocol -- --ignored
+E2E_WHEEL=$PWD/../../dist/press_engine-X.Y.Z-py3-none-any.whl E2E_UV=$(which uv) cargo test --test update_protocol -- --ignored
 ```
 
 Mac app (`desktop/`):

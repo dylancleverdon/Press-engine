@@ -2,7 +2,7 @@
 //! install, restart on exit code 75, promoting a pending update, rolling back a broken one.
 //!
 //! Needs network (uv downloads Python and packages), so it's ignored by default:
-//!   E2E_WHEEL=../../dist/press_engine-0.2.0-py3-none-any.whl E2E_UV=$(which uv) \
+//!   E2E_WHEEL=../../dist/press_engine-X.Y.Z-py3-none-any.whl E2E_UV=$(which uv) \
 //!   cargo test --test update_protocol -- --ignored --nocapture
 
 use std::fs;
@@ -91,36 +91,38 @@ fn install_restart_promote_and_rollback() {
     // 1. First run installs the bundled wheel and starts it.
     let port = wait_ready(&ui, 1, 600);
     assert!(backend::health_check(port));
+    // The version comes from the wheel's file name (press_engine-<version>-py3-none-any.whl).
+    let bundled = wheel.file_name().unwrap().to_string_lossy().split('-').nth(1).unwrap().to_string();
     let current = backend::read_marker(&paths, "current").unwrap();
-    assert_eq!(current, "0.2.0");
+    assert_eq!(current, bundled);
 
     // First-run setup through the real web UI, then save an API key -> backend asks to restart (exit 75).
     let setup = http(port, "POST", "/setup", "name=D&band=Night+Swim&timezone=UTC&seeds=Athletic+Progression", None);
     let cookie = setup.lines().find_map(|l| l.strip_prefix("set-cookie: ").or_else(|| l.strip_prefix("Set-Cookie: ")))
         .map(|c| c.split(';').next().unwrap().to_string()).expect("session cookie");
 
-    // 2. Pretend the self-updater installed 0.2.1: it should be started and promoted.
-    copy_venv_as(&paths, "0.2.0", "0.2.1");
-    backend::write_marker(&paths, "pending", "0.2.1").unwrap();
+    // 2. Pretend the self-updater installed 99.0.1: it should be started and promoted.
+    copy_venv_as(&paths, &bundled, "99.0.1");
+    backend::write_marker(&paths, "pending", "99.0.1").unwrap();
     let r = http(port, "POST", "/connections/keys", "PRESS_LASTFM_API_KEY=abc123456", Some(&cookie));
     assert!(r.contains("restarting"), "save should trigger a restart: {r}");
     let port2 = wait_ready(&ui, 2, 120);
-    assert_eq!(backend::read_marker(&paths, "current").unwrap(), "0.2.1");
+    assert_eq!(backend::read_marker(&paths, "current").unwrap(), "99.0.1");
     assert!(backend::read_marker(&paths, "pending").is_none());
     assert!(fs::read_to_string(paths.data().join(".env")).unwrap().contains("PRESS_LASTFM_API_KEY=abc123456"));
 
-    // 3. A broken update (0.2.2) is rolled back and never retried.
-    let bad_bin = paths.venv("0.2.2").join("bin");
+    // 3. A broken update (99.0.2) is rolled back and never retried.
+    let bad_bin = paths.venv("99.0.2").join("bin");
     fs::create_dir_all(&bad_bin).unwrap();
     fs::write(bad_bin.join("press-engine"), "#!/bin/sh\necho broken >&2\nexit 1\n").unwrap();
     make_executable(&bad_bin.join("press-engine"));
-    backend::write_marker(&paths, "pending", "0.2.2").unwrap();
+    backend::write_marker(&paths, "pending", "99.0.2").unwrap();
     let r = http(port2, "POST", "/connections/keys", "PRESS_LASTFM_API_KEY=changed999", Some(&cookie));
     assert!(r.contains("restarting"));
     let port3 = wait_ready(&ui, 3, 120);
     assert!(backend::health_check(port3));
-    assert_eq!(backend::read_marker(&paths, "current").unwrap(), "0.2.1");
-    assert!(backend::bad_versions(&paths).contains("0.2.2"));
+    assert_eq!(backend::read_marker(&paths, "current").unwrap(), "99.0.1");
+    assert!(backend::bad_versions(&paths).contains("99.0.2"));
 
     sup.shutdown();
     handle.join().unwrap();
