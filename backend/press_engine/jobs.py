@@ -30,6 +30,7 @@ def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *,
     """Daily discovery: expand seeds -> press + creator engines -> resolve -> dedupe -> score."""
     from .contacts.dedupe import find_merge_candidates
     from .contacts.resolve import resolve_pending
+    from .discovery.engines import ENGINES, apply_vetting, max_person_id
     from .discovery.playlists import run_playlist_discovery
     from .discovery.press import run_press_discovery
     from .discovery.tiktok import run_tiktok_discovery
@@ -44,8 +45,12 @@ def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *,
         "tiktok": run_tiktok_discovery, "playlists": run_playlist_discovery,
     }
     for name in sources:
+        before = max_person_id(session)
         try:
             stats[name] = engines[name](session, svc, settings, now=now)
+            pending = apply_vetting(session, settings, ENGINES[name], after_id=before)
+            if pending and isinstance(stats[name], dict):
+                stats[name]["waiting_for_review"] = pending
         except Exception as e:  # keep going with the other engines
             session.rollback()
             log.exception("%s discovery failed", name)

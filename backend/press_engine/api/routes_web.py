@@ -60,6 +60,7 @@ templates.env.filters["pct"] = lambda v: f"{round((v or 0) * 100)}"
 
 def page(request: Request, name: str, user: User, session: Session, **ctx) -> HTMLResponse:
     from .. import updater
+    from ..discovery.engines import ENGINES
 
     settings = ctx.pop("settings", None) or load_settings(session)
     ctx.setdefault("msg", request.query_params.get("msg"))
@@ -69,7 +70,8 @@ def page(request: Request, name: str, user: User, session: Session, **ctx) -> HT
         "user": user, "settings": settings, "local": lambda dt, fmt="%a %d %b %H:%M": _local(dt, settings.timezone, fmt),
         "statuses": views.STATUSES, "profile_url": profile_url, "desktop": cfg.desktop,
         "app_update": state.get("desktop_update"), "app_update_url": state.get("dmg_url"),
-        "move_hint": cfg.desktop and cfg.desktop_move_hint, **ctx,
+        "move_hint": cfg.desktop and cfg.desktop_move_hint,
+        "discovery_tabs": [(f"/discovery/{e.key}", e.label) for e in ENGINES.values()], **ctx,
     })
 
 
@@ -386,12 +388,7 @@ SETTINGS_FORM = [
                  ("daily_dm_target", "DMs per day"), ("sending_paused", "Pause all sending")]),
     ("Cooldowns", [("cooldown_days", "Days before re-pitching a person/address"),
                    ("outlet_cooldown_days", "Days before pitching the same outlet again (0 = off)")]),
-    ("Discovery", [("daily_new_contacts_target", "Stop press discovery after this many new contacts a day (0 = no limit)"), ("search_daily_budget", "Web searches per day (press)"),
-                   ("youtube_daily_searches", "YouTube searches per day"), ("tiktok_daily_searches", "TikTok web searches per day"),
-                   ("playlist_daily_searches", "Spotify playlist searches per day"), ("max_pages_per_run", "Max pages fetched per run"),
-                   ("similar_per_seed", "Similar artists per seed"), ("search_freshness", "Search freshness"),
-                   ("press_languages", "Languages to search (ISO codes, one per line)"),
-                   ("press_queries", "Search templates (lang: template, one per line)"),
+    ("Discovery", [("similar_per_seed", "Similar artists per seed"),
                    ("blocked_domains", "Never fetch these domains (one per line)")]),
     ("Scoring and schedule", [("min_score_to_queue", "Minimum taste score to queue (0-1)"),
                               ("llm_score_top_n", "Contacts scored by the larger model per day"),
@@ -440,31 +437,35 @@ def settings_page(request: Request, user: User = Depends(web_owner), session: Se
 async def settings_save(request: Request, user: User = Depends(web_owner), session: Session = Depends(get_db)):
     form = await request.form()
     data = load_settings(session).model_dump()
-    for _, fields in SETTINGS_FORM:
-        for name, _label in fields:
-            kind, _ = _field_kind(name)
-            if kind == "bool":
-                data[name] = form.get(name) == "on"
-            elif kind == "days":
-                data[name] = [int(d) for d in form.getlist(name)]
-            elif name == "press_queries":
-                queries: dict[str, list[str]] = {}
-                for line in str(form.get(name, "")).splitlines():
-                    if ":" in line:
-                        lang, tpl = line.split(":", 1)
-                        if tpl.strip():
-                            queries.setdefault(lang.strip().lower(), []).append(tpl.strip())
-                data[name] = queries
-            elif name in ("press_languages", "blocked_domains"):
-                data[name] = [x.strip() for x in str(form.get(name, "")).splitlines() if x.strip()]
-            elif name in form:
-                data[name] = form.get(name)
+    apply_settings_form(form, [name for _, fields in SETTINGS_FORM for name, _ in fields], data)
     try:
         save_settings(session, AppSettings.model_validate(data))
     except ValidationError as e:
         errors = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
         return back("/settings", f"Not saved - {errors}")
     return back("/settings", "Settings saved")
+
+
+def apply_settings_form(form, names: list[str], data: dict) -> None:
+    """Copy the submitted values of these settings fields into data (a settings dump)."""
+    for name in names:
+        kind, _ = _field_kind(name)
+        if kind == "bool":
+            data[name] = form.get(name) == "on"
+        elif kind == "days":
+            data[name] = [int(d) for d in form.getlist(name)]
+        elif name == "press_queries":
+            queries: dict[str, list[str]] = {}
+            for line in str(form.get(name, "")).splitlines():
+                if ":" in line:
+                    lang, tpl = line.split(":", 1)
+                    if tpl.strip():
+                        queries.setdefault(lang.strip().lower(), []).append(tpl.strip())
+            data[name] = queries
+        elif name in ("press_languages", "blocked_domains"):
+            data[name] = [x.strip() for x in str(form.get(name, "")).splitlines() if x.strip()]
+        elif name in form:
+            data[name] = form.get(name)
 
 
 @router.post("/users")

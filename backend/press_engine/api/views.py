@@ -144,6 +144,7 @@ def today_summary(session: Session, settings: AppSettings, svc, *, now: datetime
         "dm_queue": session.scalar(select(func.count(Outreach.id)).where(
             Outreach.channel == Channel.DM, Outreach.status == OutreachStatus.QUEUED)) or 0,
         "new_leads_24h": session.scalar(select(func.count(Person.id)).where(Person.created_at >= start_utc)) or 0,
+        "waiting_for_review": session.scalar(select(func.count(Person.id)).where(Person.vetting == "pending")) or 0,
         "unread_replies": session.scalar(select(func.count(InboundMessage.id)).where(
             InboundMessage.kind == "reply", InboundMessage.read.is_(False))) or 0,
         "pending_merges": session.scalar(select(func.count(MergeCandidate.id)).where(MergeCandidate.status == "pending")) or 0,
@@ -154,8 +155,11 @@ def today_summary(session: Session, settings: AppSettings, svc, *, now: datetime
 
 
 def search_people(session: Session, *, q: str | None = None, status: str | None = None, kind: str | None = None,
-                  needs_email: bool | None = None, limit: int = 50, offset: int = 0) -> tuple[list[Person], int]:
+                  needs_email: bool | None = None, limit: int = 50, offset: int = 0,
+                  vetting: str | None = "approved") -> tuple[list[Person], int]:
     stmt = select(Person)
+    if vetting:
+        stmt = stmt.where(Person.vetting == vetting)
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(Person.name.ilike(like), Person.notes.ilike(like), Person.bio.ilike(like)))

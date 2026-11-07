@@ -26,23 +26,31 @@
   <nav>
     <span class="brand">Press Engine</span>
     {% set path = request.url.path %}
-    <a href="/" class="{{ 'active' if path == '/' }}">Today</a>
-    <a href="/contacts" class="{{ 'active' if path.startswith('/contacts') }}">Contacts</a>
-    <a href="/dms" class="{{ 'active' if path.startswith('/dms') }}">DM queue</a>
-    {% if user.is_owner %}
-    <a href="/inbox" class="{{ 'active' if path.startswith('/inbox') }}">Inbox</a>
-    <a href="/merges" class="{{ 'active' if path.startswith('/merges') }}">Duplicates</a>
-    {% endif %}
-    <a href="/seeds" class="{{ 'active' if path.startswith('/seeds') }}">Soundalikes</a>
-    <a href="/runs" class="{{ 'active' if path.startswith('/runs') }}">Runs</a>
-    {% if user.is_owner %}<a href="/settings" class="{{ 'active' if path.startswith('/settings') }}">Settings</a>
-    <a href="/connections" class="{{ 'active' if path.startswith('/connections') }}">Connections</a>{% endif %}
-    <a href="/suggestions" class="{{ 'active' if path.startswith('/suggestions') }}">Suggestions</a>
-    <button type="button" class="refresh" onclick="location.reload()" title="Refresh this page (⌘R)" aria-label="Refresh this page">↻</button>
+    {% set owner = user.is_owner %}
+    {% set section = 'discovery' if path.startswith('/discovery') or path.startswith('/seeds')
+       else 'contacts' if path.startswith('/contacts') or path.startswith('/merges')
+       else 'inbox' if path.startswith('/inbox') or path.startswith('/dms')
+       else 'settings' if path.startswith('/settings') or path.startswith('/connections') or path.startswith('/runs')
+       else 'suggestions' if path.startswith('/suggestions') else 'today' if path == '/' else '' %}
+    <a href="/" class="{{ 'active' if section == 'today' }}">Today</a>
+    <a href="/discovery" class="{{ 'active' if section == 'discovery' }}">Discovery</a>
+    <a href="/contacts" class="{{ 'active' if section == 'contacts' }}">Contacts</a>
+    <a href="{{ '/inbox' if owner else '/dms' }}" class="{{ 'active' if section == 'inbox' }}">Inbox</a>
+    <a href="/suggestions" class="{{ 'active' if section == 'suggestions' }}">Suggestions</a>
+    <a href="{{ '/settings' if owner else '/runs' }}" class="icon-button gear {{ 'active' if section == 'settings' }}" title="Settings, connections and runs" aria-label="Settings">⚙</a>
+    <button type="button" class="icon-button refresh" onclick="location.reload()" title="Refresh this page (⌘R)" aria-label="Refresh this page">↻</button>
     <span class="who">{{ user.name }} · <a href="/logout">log out</a></span>
   </nav>
 </header>
 <main>
+  {% set tabs = {
+    'discovery': [('/discovery', 'Overview'), ('/seeds', 'Soundalikes')] + discovery_tabs,
+    'contacts': [('/contacts', 'All contacts')] + ([('/merges', 'Duplicates')] if owner else []),
+    'inbox': ([('/inbox', 'Emails')] if owner else []) + [('/dms', 'DM queue')],
+    'settings': ([('/settings', 'Settings'), ('/connections', 'Connections')] if owner else []) + [('/runs', 'Runs')],
+  }.get(section) %}
+  {% if tabs %}<nav class="subnav">{% for href, label in tabs %}
+    <a href="{{ href }}" class="{{ 'active' if path == href or (href != '/discovery' and path.startswith(href ~ '/')) }}">{{ label }}</a>{% endfor %}</nav>{% endif %}
   {% if app_update %}<div class="flash">A new version of the Mac app ({{ app_update }}) is available.
     <a href="{{ app_update_url or 'https://github.com/dylancleverdon/Press-engine/releases/latest' }}">Download it</a>, then drag it into Applications to replace this one. Your data stays put.</div>{% endif %}
   {% if move_hint %}<div class="flash warn">Press Engine is running from the disk image. Quit it, drag it into your Applications folder and open it from there, so it can open at login and keep sending.</div>{% endif %}

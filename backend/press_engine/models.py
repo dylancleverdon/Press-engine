@@ -164,6 +164,9 @@ class Person(Base):
     found_via: Mapped[str | None] = mapped_column(String(40))
     # The soundalike whose search turned this contact up (for fit tracking).
     discovered_artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="SET NULL"), index=True)
+    # Discovery vetting: engine finds wait as "pending" until approved (or auto-approved);
+    # "rejected" ones are kept hidden so the engines don't add them again.
+    vetting: Mapped[str] = mapped_column(String(12), default="approved", index=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)

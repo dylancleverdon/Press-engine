@@ -195,7 +195,7 @@ def score_with_llm(session: Session, llm: LLMClient | None, settings: AppSetting
         .order_by(Artist.similarity.desc()).limit(20))]
     candidates = session.scalars(
         select(Person)
-        .where(Person.status == PersonStatus.NEW, Person.opted_out.is_(False), Person.heuristic_score > 0,
+        .where(Person.status == PersonStatus.NEW, Person.vetting == "approved", Person.opted_out.is_(False), Person.heuristic_score > 0,
                (Person.llm_scored_at.is_(None)) | (Person.llm_scored_at < stale))
         .order_by(Person.heuristic_score.desc())
         .limit(limit * 4)

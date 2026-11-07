@@ -314,3 +314,21 @@ def test_make_seed_from_in_use_refresh_and_auto_reload(db, services, session, la
         assert "refreshes by itself" in client.get("/seeds").text
     finally:
         views.RUNNING.clear()
+
+
+def test_soundalike_made_seed_gets_tags_and_its_own_lookup(session, services, router):
+    """Suggestion #8: a soundalike already used for a second hop still gets tags when made a seed."""
+    def handler(req):
+        if req.url.params["method"] == "artist.getsimilar":
+            return httpx.Response(200, json={"similarartists": {"artist": []}})
+        return httpx.Response(200, json={"toptags": {"tag": [{"name": "Jazz"}, {"name": "Nu Jazz"}]}})
+
+    router.add("GET", LASTFM, handler)
+    services.lastfm = LastFM("k", services.http)
+    mh = f.artist(session, "Mammal Hands", similarity=0.9)
+    mh.expanded_at = NOW - timedelta(days=1)  # looked at as a second hop yesterday
+    session.flush()
+    add_seed(session, "Mammal Hands")
+    assert mh.is_seed and mh.expanded_at is None
+    sa.discover_soundalikes(session, services, load_settings(session), now=NOW)
+    assert mh.tags == ["jazz", "nu jazz"] and mh.expanded_at == NOW

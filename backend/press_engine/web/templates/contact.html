@@ -4,6 +4,7 @@
 <div class="row">
   <h1 class="grow">{{ p.name }} <span class="chip">{{ p.kind }}</span>
     {% if p.opted_out %}<span class="chip bad">opted out</span>{% endif %}
+    {% if p.vetting == "pending" %}<span class="chip warn">waiting to be vetted (Discovery)</span>{% elif p.vetting == "rejected" %}<span class="chip bad">rejected in Discovery</span>{% endif %}
     {% if p.needs_review %}<span class="chip warn">needs review</span>{% endif %}</h1>
   <span class="chip">taste {{ p.taste_score|pct }}</span>
 </div>

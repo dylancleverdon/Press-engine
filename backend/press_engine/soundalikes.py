@@ -116,7 +116,7 @@ def discover_soundalikes(session: Session, svc, settings: AppSettings, *, now: d
     else:
         week_ago = now - timedelta(days=7)
         seeds = [s for s in session.scalars(select(Artist).where(Artist.source == "manual", Artist.active.is_(True)))
-                 if force or s.expanded_at is None or s.expanded_at < week_ago]
+                 if force or not s.tags or s.expanded_at is None or s.expanded_at < week_ago]
         if seeds:
             stats["seeds"] = expand_seeds(session, svc.lastfm, per_seed=settings.similar_per_seed, seeds=seeds,
                                           now=now, auto_accept=settings.auto_accept_similarity)

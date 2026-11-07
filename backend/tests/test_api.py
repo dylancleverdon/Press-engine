@@ -140,8 +140,11 @@ def test_dashboard_pages_render(app_client, db):
     # Settings form round-trip, including validation errors.
     form = {"band_name": "Night Swim", "timezone": "Europe/Copenhagen", "send_window_start": "10:00", "send_window_end": "16:00",
             "send_days": ["0", "1", "2"], "require_approval": "on", "pitch_subject": "{band_name} for {first_name}",
-            "press_queries": "en: \"{artist}\" review\nda: \"{artist}\" anmeldelse", "press_languages": "en\nda"}
+            }
     assert app_client.post("/settings", data=form, follow_redirects=False).status_code == 303
+    press = {"press_queries": "en: \"{artist}\" review\nda: \"{artist}\" anmeldelse", "press_languages": "en\nda",
+             "search_daily_budget": "60", "daily_new_contacts_target": "20", "max_pages_per_run": "150", "search_freshness": "year"}
+    assert app_client.post("/discovery/press/settings", data=press, follow_redirects=False).status_code == 303
     with db.session() as s:
         from press_engine.appsettings import load_settings
 

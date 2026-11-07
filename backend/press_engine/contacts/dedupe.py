@@ -83,6 +83,8 @@ def merge_people(session: Session, keep: Person, drop: Person) -> Person:
     keep.last_contacted_at = max(filter(None, (keep.last_contacted_at, drop.last_contacted_at)), default=None)
     keep.found_by_user_id = keep.found_by_user_id or drop.found_by_user_id
     keep.found_via = keep.found_via or drop.found_via
+    if "approved" in (keep.vetting, drop.vetting):  # either side already vetted in
+        keep.vetting = "approved"
     keep.discovered_artist_id = keep.discovered_artist_id or drop.discovered_artist_id
     if keep.is_desk and not drop.is_desk:
         keep.name, keep.is_desk = drop.name, False

@@ -124,7 +124,7 @@ def sent_on(session: Session, day, tz) -> int:
 def _candidates(session: Session, settings: AppSettings, limit: int = 600) -> list[Person]:
     return list(session.scalars(
         select(Person)
-        .where(Person.status == PersonStatus.NEW, Person.opted_out.is_(False), Person.needs_review.is_(False),
+        .where(Person.status == PersonStatus.NEW, Person.vetting == "approved", Person.opted_out.is_(False), Person.needs_review.is_(False),
                Person.taste_score >= settings.min_score_to_queue)
         .order_by(Person.taste_score.desc(), Person.id)
         .limit(limit)

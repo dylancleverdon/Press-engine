@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Discovery · Press Engine{% endblock %}
+{% block content %}
+<div class="row"><h1 class="grow">Discovery</h1>
+  {% if user.is_owner %}<form method="post" action="/runs/discover" class="inline"><button {{ 'disabled' if running }}>Run all engines now</button></form>{% endif %}</div>
+<p class="muted">Step one is the soundalikes: artists the band sounds like. Each engine then looks for people who cover them.
+  What an engine finds waits on its page for you to approve before it's added to Contacts, unless you switch on its auto-approve.
+  {% if last_run %}Last full run {{ local(last_run.started_at) }}. {% endif %}Runs daily at {{ settings.discovery_time }}.</p>
+{% if running %}<div class="flash">Discovery is running…</div>{% endif %}
+
+<div class="engine-grid">
+  <a class="panel engine-card" href="/seeds">
+    <h3>Soundalikes</h3>
+    <p class="small muted">The artists every engine searches for.</p>
+    <div class="row small"><span><b>{{ soundalikes.seeds }}</b> seeds</span><span><b>{{ soundalikes.in_use }}</b> in use</span>
+      {% if soundalikes.suggested %}<span class="chip warn">{{ soundalikes.suggested }} suggested</span>{% endif %}</div>
+  </a>
+  {% for c in cards %}{% set e = c.engine %}
+  <a class="panel engine-card" href="/discovery/{{ e.key }}">
+    <h3>{{ e.label }} {% if c.connected[0] %}<span class="chip ok">{{ c.connected[1] if e.runnable else "manual" }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h3>
+    <p class="small muted">{{ e.blurb }}</p>
+    <div class="row small"><span><b>{{ c.counts.approved }}</b> in Contacts</span>
+      {% if c.counts.pending %}<span class="chip warn">{{ c.counts.pending }} to vet</span>{% endif %}
+      {% if c.counts.rejected %}<span class="muted">{{ c.counts.rejected }} rejected</span>{% endif %}
+      {% if e.runnable and e.auto_approve(settings) %}<span class="chip">auto-approve</span>{% endif %}</div>
+    {% if not c.connected[0] %}<p class="small warn" style="margin:6px 0 0">{{ c.connected[1] }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

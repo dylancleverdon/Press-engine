@@ -59,5 +59,17 @@ pre.code { background: var(--chip); padding: 10px; border-radius: 8px; overflow-
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; width: min(420px, calc(100% - 32px)); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
 .modal p { margin: 0 0 12px; }
-header nav .refresh { margin-left: auto; padding: 2px 9px; font-size: 16px; line-height: 1.4; }
+header nav .icon-button { display: inline-block; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  border-radius: 8px; padding: 2px 9px; font-size: 16px; line-height: 1.4; cursor: pointer; font-family: inherit; }
+header nav .icon-button:hover, header nav .icon-button.active { background: var(--chip); text-decoration: none; }
+header nav .gear { margin-left: auto; }
+header nav .refresh { margin-left: 4px; }
 header nav .refresh + .who { margin-left: 12px; }
+nav.subnav { display: flex; gap: 4px; flex-wrap: wrap; margin: -6px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+nav.subnav a { padding: 4px 10px; border-radius: 8px; color: var(--muted); font-size: 14px; }
+nav.subnav a.active, nav.subnav a:hover { background: var(--chip); color: var(--text); text-decoration: none; }
+.pre-wrap { white-space: pre-wrap; }
+.engine-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.engine-card { display: block; color: var(--text); margin: 0; }
+.engine-card:hover { text-decoration: none; border-color: var(--accent); }
+.engine-card h3 { display: flex; gap: 8px; align-items: center; justify-content: space-between; }

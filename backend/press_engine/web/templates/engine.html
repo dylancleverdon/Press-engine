@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_fields.html" as fields_macro %}
+{% block title %}{{ engine.label }} · Discovery · Press Engine{% endblock %}
+{% block content %}
+<div class="row"><h1 class="grow">{{ engine.label }}
+  {% if connected[0] %}<span class="chip ok">{{ connected[1] }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h1>
+  {% if user.is_owner and engine.runnable %}<form method="post" action="/discovery/{{ engine.key }}/run" class="inline">
+    <button class="primary" {{ 'disabled' if running or not connected[0] }}>Run {{ engine.label }} now</button></form>{% endif %}</div>
+<p class="muted">{{ engine.blurb }}{% if not connected[0] %} <b class="warn">{{ connected[1] }}.</b>{% endif %}</p>
+{% if running %}
+<div class="flash">Discovery is running… this page refreshes by itself when it's done.</div>
+<script>
+  (function poll() {
+    setTimeout(async () => {
+      try {
+        const r = await fetch("/jobs/running", { credentials: "same-origin" });
+        const { running } = await r.json();
+        if (!running.includes("discover")) { location.replace(location.pathname + location.search); return; }
+      } catch (e) { /* keep trying */ }
+      poll();
+    }, 3000);
+  })();
+</script>
+{% endif %}
+
+<div class="cols">
+<div>
+  <nav class="subnav">
+    {% for v, label in [("pending", "To vet"), ("approved", "Approved"), ("rejected", "Rejected")] %}
+    <a href="?show={{ v }}" class="{{ 'active' if show == v }}">{{ label }} <span class="muted">{{ counts[v] }}</span></a>{% endfor %}
+  </nav>
+  {% if rows %}
+  <form method="post" action="/discovery/{{ engine.key }}/vet">
+    <input type="hidden" name="show" value="{{ show }}">
+    {% if user.is_owner %}<div class="row" style="margin-bottom:8px">
+      <label class="inline"><input type="checkbox" onclick="document.querySelectorAll('input[name=ids]').forEach(c => c.checked = this.checked)"> All</label>
+      {% if show != "approved" %}<button name="decision" value="approve">Approve ticked</button>{% endif %}
+      {% if show != "rejected" %}<button name="decision" value="reject" class="danger">Reject ticked</button>{% endif %}
+    </div>{% endif %}
+    <table>
+      <tr><th></th><th>Who</th><th>Found through</th><th>What they made</th><th>Contact</th><th></th></tr>
+      {% for p in rows %}
+      {% set covs = p.coverage | sort(attribute="id", reverse=true) %}
+      {% set via = (covs | map(attribute="artist_name") | unique | list) %}
+      {% set found_by = artist_names.get(p.discovered_artist_id) %}
+      <tr>
+        <td>{% if user.is_owner %}<input type="checkbox" name="ids" value="{{ p.id }}">{% endif %}</td>
+        <td><a href="/contacts/{{ p.id }}">{{ p.name }}</a>
+          <div class="small muted">{% if p.followers %}{{ "{:,}".format(p.followers) }} followers{% endif %}{% if p.country %} · {{ p.country }}{% endif %}</div>
+          {% for i in p.identities if i.type not in ("email", "site") %}{% set link = profile_url(i.type, i.value) %}{% if link and loop.index <= 3 %}
+            <a class="small" href="{{ link }}" target="_blank" rel="noopener">{{ i.type }}</a>{% endif %}{% endfor %}</td>
+        <td class="small">{% if found_by %}<span class="chip">{{ found_by }}</span>{% endif %}
+          {% for a in via if a != found_by %}{% if loop.index <= 4 %}<span class="chip">{{ a }}</span>{% endif %}{% endfor %}</td>
+        <td class="small">{% for c in covs[:2] %}<div><a href="{{ c.url }}" target="_blank" rel="noopener">{{ (c.title or c.url) | truncate(70) }}</a>
+          {% if c.published_at %}<span class="muted">{{ c.published_at.strftime("%b %Y") }}</span>{% endif %}</div>{% endfor %}</td>
+        <td class="small">{{ contact_line(p, settings) }}</td>
+        <td>{% if user.is_owner %}<div class="row" style="flex-wrap:nowrap">
+          {% if show != "approved" %}<button class="primary" name="decision" value="approve" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Approve</button>{% endif %}
+          {% if show != "rejected" %}<button class="danger" name="decision" value="reject" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Reject</button>{% endif %}
+          {% if show != "pending" and show != "approved" %}<button name="decision" value="pending" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Back to review</button>{% endif %}
+        </div>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </form>
+  {% else %}
+  <p class="muted">{{ {"pending": "Nothing waiting to be vetted.", "approved": "Nothing approved from this engine yet.", "rejected": "Nothing rejected."}[show] }}</p>
+  {% endif %}
+
+  {% if searches %}
+  <h2>Recent searches</h2>
+  <table class="small">
+    <tr><th>When</th><th>Search</th><th>Soundalike</th><th>Results</th></tr>
+    {% for r in searches %}
+    <tr><td>{{ local(r.run_at, "%d %b %H:%M") }}</td><td>{{ r.query }}</td><td>{{ artist_names.get(r.artist_id, "") }}</td>
+      <td>{% if r.error %}<span class="bad">{{ r.error | truncate(80) }}</span>{% else %}{{ r.result_count }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<div>
+  {% if user.is_owner and fields %}
+  <form method="post" action="/discovery/{{ engine.key }}/settings" class="panel">
+    <h3>How {{ engine.label }} searches</h3>
+    {% for f in fields %}{{ fields_macro.field(*f) }}{% endfor %}
+    <button class="primary" style="margin-top:10px">Save</button>
+  </form>
+  {% endif %}
+  {% if engine.key == "captures" %}
+  <div class="panel small"><h3>Adding Instagram creators</h3>
+    <p>Open a profile in Chrome and click <b>Save to CRM</b> in the extension, or share the profile to Press Engine from your phone. It lands here to vet.</p></div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

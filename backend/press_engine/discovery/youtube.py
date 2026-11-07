@@ -145,7 +145,8 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
         snip = ch.get("snippet") or {}
         st = ch.get("statistics") or {}
         subs = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount") or 0)
-        if subs is not None and subs < MIN_SUBSCRIBERS:
+        if subs is not None and (subs < settings.youtube_min_subscribers
+                                 or (settings.youtube_max_subscribers and subs > settings.youtube_max_subscribers)):
             stats["too_small"] += 1
             continue
         if is_official(snip.get("title", ""), artist_keys):

@@ -80,6 +80,7 @@ def get_or_create_artist(session: Session, name: str, *, source: str = "manual")
             artist.similarity = 1.0
             artist.active = True
             artist.review = "accepted"
+            artist.expanded_at = None  # a second-hop lookup isn't its own seed lookup: do that now
         return artist, False
     artist = Artist(name=name.strip(), name_key=key, source=source, similarity=1.0 if source == "manual" else 0.0,
                     review="accepted" if source == "manual" else "suggested")

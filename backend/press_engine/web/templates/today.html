@@ -11,6 +11,7 @@
   <div class="panel stat"><b>{{ scheduled|length }}</b><span class="muted">scheduled</span></div>
   <div class="panel stat"><b><a href="/dms">{{ summary.dm_queue }}</a></b><span class="muted">DMs to send</span></div>
   <div class="panel stat"><b><a href="/contacts">{{ summary.new_leads_24h }}</a></b><span class="muted">new leads (24h)</span></div>
+  {% if summary.waiting_for_review %}<div class="panel stat"><b><a href="/discovery">{{ summary.waiting_for_review }}</a></b><span class="muted">found, waiting for you to vet</span></div>{% endif %}
   {% if user.is_owner %}
   <div class="panel stat"><b><a href="/inbox">{{ summary.unread_replies }}</a></b><span class="muted">unread replies</span></div>
   <div class="panel stat"><b><a href="/merges">{{ summary.pending_merges }}</a></b><span class="muted">possible duplicates</span></div>

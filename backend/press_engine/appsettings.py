@@ -124,6 +124,13 @@ class AppSettings(BaseModel):
     youtube_daily_searches: int = 30
     tiktok_daily_searches: int = 10
     playlist_daily_searches: int = 10
+    youtube_min_subscribers: int = 100
+    youtube_max_subscribers: int = 0  # 0 = no upper limit
+    # Discovery vetting: auto-approve what each engine finds instead of waiting for review.
+    press_auto_approve: bool = False
+    youtube_auto_approve: bool = False
+    tiktok_auto_approve: bool = False
+    playlists_auto_approve: bool = False
     max_pages_per_run: int = 150
     press_languages: list[str] = Field(default_factory=lambda: ["en", "da", "de", "nl", "sv", "ja"])
     press_queries: dict[str, list[str]] = Field(default_factory=lambda: dict(DEFAULT_PRESS_QUERIES))

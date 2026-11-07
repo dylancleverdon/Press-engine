@@ -20,7 +20,7 @@
 
 {% for s in rows %}
 <div class="panel">
-  <div class="row"><b class="grow">#{{ s.id }} {{ s.text }}</b><span class="chip {{ 'ok' if s.status in ('shipped', 'accepted') else 'bad' if s.status == 'rejected' }}">{{ s.status }}</span></div>
+  <div class="row"><b class="grow pre-wrap">#{{ s.id }} {{ s.text }}</b><span class="chip {{ 'ok' if s.status in ('shipped', 'accepted') else 'bad' if s.status == 'rejected' }}">{{ s.status }}</span></div>
   <div class="small muted">{{ local(s.created_at, "%d %b %Y") }}{% if s.submitted_by %} · {{ s.submitted_by.name }}{% endif %}{% if s.area %} · {{ s.area }}{% endif %}
     · {{ "in the sheet" if s.synced_at and not s.dirty else "not synced yet" }}</div>
   {% if user.is_owner %}
@@ -31,8 +31,8 @@
     <button style="margin-top: 6px">Save</button>
   </form>
   {% else %}
-  {% if s.notes %}<p class="small"><b>Notes:</b> {{ s.notes }}</p>{% endif %}
-  {% if s.adjustments %}<p class="small"><b>Adjustments:</b> {{ s.adjustments }}</p>{% endif %}
+  {% if s.notes %}<p class="small pre-wrap"><b>Notes:</b> {{ s.notes }}</p>{% endif %}
+  {% if s.adjustments %}<p class="small pre-wrap"><b>Adjustments:</b> {{ s.adjustments }}</p>{% endif %}
   {% endif %}
 </div>
 {% else %}

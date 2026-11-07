@@ -1,0 +1,17 @@
+{% macro field(name, label, kind, options, value, days=[]) %}
+    {% if kind == "bool" %}
+      <label class="inline" style="margin-top:8px"><input type="checkbox" name="{{ name }}" {{ 'checked' if value }}> {{ label }}</label><br>
+    {% elif kind == "days" %}
+      <label>{{ label }}</label>
+      {% for d in days %}<label class="inline"><input type="checkbox" name="send_days" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 in value }}> {{ d }}</label>{% endfor %}
+    {% elif kind == "select" %}
+      <label for="{{ name }}">{{ label }}</label>
+      <select id="{{ name }}" name="{{ name }}">{% for opt in options %}<option {{ 'selected' if opt == value }}>{{ opt }}</option>{% endfor %}</select>
+    {% elif kind == "textarea" %}
+      <label for="{{ name }}">{{ label }}</label>
+      <textarea id="{{ name }}" name="{{ name }}" class="{{ 'tall' if name in ('pitch_body', 'band_sound_profile', 'blocked_domains', 'press_queries') }}">{{ value }}</textarea>
+    {% else %}
+      <label for="{{ name }}">{{ label }}</label>
+      <input id="{{ name }}" type="{{ 'number' if kind == 'number' else 'text' }}" {{ 'step=any' if kind == 'number' }} name="{{ name }}" value="{{ value }}">
+    {% endif %}
+{% endmacro %}
