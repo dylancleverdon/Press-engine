@@ -62,6 +62,7 @@ templates.env.filters["pct"] = lambda v: f"{round((v or 0) * 100)}"
 
 def page(request: Request, name: str, user: User, session: Session, **ctx) -> HTMLResponse:
     from .. import updater
+    from .. import progress
     from ..discovery.engines import ENGINES
 
     settings = ctx.pop("settings", None) or load_settings(session)
@@ -73,7 +74,10 @@ def page(request: Request, name: str, user: User, session: Session, **ctx) -> HT
         "statuses": views.STATUSES, "profile_url": profile_url, "desktop": cfg.desktop,
         "app_update": state.get("desktop_update"), "app_update_url": state.get("dmg_url"),
         "move_hint": cfg.desktop and cfg.desktop_move_hint,
-        "discovery_tabs": [(f"/discovery/{e.key}", e.label) for e in ENGINES.values()], **ctx,
+        "discovery_tabs": [(f"/discovery/{e.key}", e.label) for e in ENGINES.values()],
+        "progress_now": progress.current(),
+        "update_banner": {**(updater.banner(cfg, utcnow()) if cfg.desktop else {"phase": "idle"}),
+                          "announce": settings.announce_version or None}, **ctx,
     })
 
 
@@ -352,12 +356,17 @@ def thread_reply(request: Request, oid: int, body: str = Form(...), user: User =
 @router.post("/seeds")
 def seed_add(request: Request, names: str = Form(...), user: User = Depends(web_owner), session: Session = Depends(get_db),
              svc=Depends(get_svc)):
-    added = [add_seed(session, n).name for n in names.replace(",", "\n").splitlines() if n.strip()]
+    artists = [add_seed(session, n) for n in names.replace(",", "\n").splitlines() if n.strip()]
+    added = [a.name for a in artists]
     session.commit()
     if svc.lastfm is not None:  # look for their soundalikes straight away
         views.run_in_background(request.app.state.db, svc, "expand")
-        return back("/seeds", f"Added {', '.join(added)}. Looking for soundalikes now - refresh in a minute.")
-    return back("/seeds", f"Added {', '.join(added)}. Add a Last.fm key on Connections to find their soundalikes.")
+        resp = back("/seeds", f"Added {', '.join(added)}. Looking for soundalikes now.")
+    else:
+        resp = back("/seeds", f"Added {', '.join(added)}. Add a Last.fm key on Connections to find their soundalikes.")
+    if artists:
+        resp.headers["location"] += f"#artist-{artists[0].id}"
+    return resp
 
 
 @router.post("/seeds/{aid}/remove")

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..appsettings import AppSettings, load_settings, save_settings
 from ..discovery import engines as eng
-from ..models import Artist, JobRun, Person, User
+from ..models import Artist, JobRun, Person, SearchRun, User
 from . import views
 from .deps import get_db, get_svc, web_owner, web_user
 
@@ -38,6 +38,66 @@ def _connected(svc, e: eng.Engine) -> tuple[bool, str]:
     return True, "Chrome extension and phone share sheet"
 
 
+def engine_status(session: Session, e: eng.Engine, settings) -> dict:
+    """The engine's last run in plain words, and today's search use (#25)."""
+    from datetime import timedelta
+
+    from ..discovery.press import searches_since
+    from ..util.timeutil import utcnow
+
+    out: dict = {"last": None, "used": None, "cap": None, "next_free": None}
+    for run in session.scalars(select(JobRun).where(JobRun.job == "discover").order_by(JobRun.started_at.desc()).limit(30)):
+        st = (run.stats or {}).get(e.key)
+        if run.ok is False and st is None and run.error:
+            out["last"] = {"at": run.started_at, "ok": False, "text": f"The run failed: {run.error[:200]}"}
+            break
+        if st is not None:
+            out["last"] = {"at": run.started_at, **describe_engine_stats(st)}
+            break
+    cap_field = {"youtube": "youtube_daily_searches", "tiktok": "tiktok_daily_searches", "press": "search_daily_budget",
+                 "playlists": "playlist_daily_searches"}.get(e.key)
+    if cap_field and e.search_engine:
+        now = utcnow()
+        since = now - timedelta(hours=24)
+        out["used"] = searches_since(session, e.search_engine, since)
+        out["cap"] = getattr(settings, cap_field)
+        if out["used"] >= out["cap"]:
+            oldest = session.scalar(select(SearchRun.run_at).where(SearchRun.engine == e.search_engine,
+                                                                     SearchRun.run_at >= since).order_by(SearchRun.run_at))
+            out["next_free"] = oldest + timedelta(hours=24) if oldest else None
+    return out
+
+
+def describe_engine_stats(st: dict) -> dict:
+    if not isinstance(st, dict):
+        return {"ok": True, "text": str(st)}
+    if st.get("error"):
+        return {"ok": False, "text": f"Stopped with an error: {st['error']}"}
+    if st.get("stopped"):
+        return {"ok": False, "text": st["stopped"]}
+    if st.get("skipped"):
+        why = st["skipped"]
+        if "budget used up" in why:
+            return {"ok": False, "text": "Didn't search: today's searches were already used up (see the meter below)."}
+        return {"ok": False, "text": f"Didn't run: {why}"}
+    bits = []
+    if "searches" in st:
+        bits.append(f"{st['searches']} searches")
+    if st.get("new_people") is not None:
+        bits.append(f"{st['new_people']} new")
+    if st.get("waiting_for_review"):
+        bits.append(f"{st['waiting_for_review']} waiting to be vetted")
+    if st.get("skipped_videos"):
+        bits.append(f"{st['skipped_videos']} videos skipped by the rules")
+    if st.get("too_small"):
+        bits.append(f"{st['too_small']} channels outside the subscriber limits")
+    if st.get("rules", {}).get("filtered"):
+        bits.append(f"{st['rules']['filtered']} moved to Filtered out")
+    if st.get("errors"):
+        bits.append(f"{st['errors']} searches failed (see Recent searches)")
+    return {"ok": not st.get("errors"), "text": "Finished: " + (", ".join(bits) if bits else "nothing new") + "."}
+
+
 def _last_discover(session: Session) -> JobRun | None:
     return session.scalar(select(JobRun).where(JobRun.job == "discover").order_by(JobRun.started_at.desc()).limit(1))
 
@@ -58,7 +118,7 @@ def overview(request: Request, user: User = Depends(web_user), session: Session 
 
 
 @router.get("/discovery/{key}", response_class=HTMLResponse)
-def engine_page(request: Request, key: str, show: str | None = None, user: User = Depends(web_user),
+def engine_page(request: Request, key: str, show: str | None = None, how: str | None = None, user: User = Depends(web_user),
                 session: Session = Depends(get_db), svc=Depends(get_svc)):
     from .routes_web import _field_kind, _form_value, page
 
@@ -70,13 +130,17 @@ def engine_page(request: Request, key: str, show: str | None = None, user: User 
     if e.auto_field:
         fields.append((e.auto_field, "Auto-approve: add what this engine finds straight to Contacts", "bool", [],
                        getattr(settings, e.auto_field)))
-    rows = eng.people(session, e, show)
+    if how not in eng.REACH:
+        how = None
+    rows = eng.people(session, e, show, how=how)
     session.scalars(select(Person).where(Person.id.in_([p.id for p in rows]))
                     .options(selectinload(Person.identities), selectinload(Person.coverage)))
     artist_names = {a.id: a.name for a in session.scalars(select(Artist))}
     searches = eng.recent_searches(session, e)
     return page(request, "engine.html", user, session, settings=settings, engine=e, fields=fields, rows=rows, show=show,
-                counts=eng.counts(session, e), connected=_connected(svc, e), searches=searches,
+                counts=eng.counts(session, e), connected=_connected(svc, e), searches=searches, how=how,
+                reach_counts=eng.reach_counts(session, e, show), shown_total=len(eng.people(session, e, show, limit=None, how=how)),
+                reach=eng.reach, status=engine_status(session, e, settings),
                 artist_names=artist_names, contact_line=views.contact_line, merged_channels=eng.merged_channels,
                 running="discover" in views.running_jobs())
 
@@ -99,9 +163,8 @@ def engine_run(request: Request, key: str, user: User = Depends(web_owner), svc=
 def youtube_recheck(user: User = Depends(web_owner), session: Session = Depends(get_db)):
     from .routes_web import back
 
-    st = eng.recheck_youtube(session, load_settings(session))
-    return back("/discovery/youtube", f"Checked {st['checked']} finds: dropped {st['videos_dropped']} videos that don't count, "
-                f"moved {st['rejected']} with nothing left to Rejected, flagged {st['merged_flagged']} that hold several channels.")
+    st = eng.apply_youtube_rules(session, load_settings(session))
+    return back("/discovery/youtube", eng.describe_rules_result(st))
 
 
 @router.post("/discovery/{key}/settings")
@@ -118,6 +181,9 @@ async def engine_settings(request: Request, key: str, user: User = Depends(web_o
     except ValidationError as err:
         errors = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in err.errors())
         return back(f"/discovery/{key}", f"Not saved - {errors}")
+    if e.key == "youtube":  # new rules apply straight away to what's waiting
+        st = eng.apply_youtube_rules(session, load_settings(session))
+        return back(f"/discovery/{key}", f"YouTube settings saved. {eng.describe_rules_result(st)}")
     return back(f"/discovery/{key}", f"{e.label} settings saved")
 
 
@@ -158,22 +224,38 @@ async def report_send(request: Request, pid: int, text: str = Form(...), next: s
 
 
 @router.post("/discovery/{key}/vet")
-def vet(key: str, decision: str = Form(...), ids: list[int] = Form(default=[]), show: str = Form("pending"),
-        one: int | None = None, user: User = Depends(web_owner), session: Session = Depends(get_db)):
-    """Approve or reject one contact (?one=id) or the ticked ones (ids)."""
+def vet(request: Request, key: str, decision: str = Form(...), ids: list[int] = Form(default=[]), show: str = Form("pending"),
+        how: str = Form(""), everything: str = "", one: int | None = None,
+        user: User = Depends(web_owner), session: Session = Depends(get_db)):
+    """Approve or reject one contact (?one=id), the ticked ones (ids), or everything in the
+    current tab and filter (everything=1). Answers JSON to the page's own requests, so
+    the page doesn't reload (and jump back to the top)."""
+    from fastapi.responses import JSONResponse
+
     from .routes_web import back
 
     e = _engine(key)
-    if one is not None:
-        ids = [one]
-    if not ids:
-        return back(f"/discovery/{e.key}?show={show}", "Tick some contacts first")
-    if decision not in ("approve", "reject", "pending"):
+    if decision not in eng.DECISIONS:
         raise HTTPException(400)
-    people = list(session.scalars(select(Person).where(Person.id.in_(ids)))) if ids else []
+    here = f"/discovery/{e.key}?show={show}" + (f"&how={how}" if how in eng.REACH else "")
+    if one is not None:
+        people = [p for p in [session.get(Person, one)] if p is not None]
+    elif everything:
+        people = eng.people(session, e, show if show in eng.VETTING else eng.PENDING, limit=None,
+                            how=how if how in eng.REACH else None)
+    else:
+        people = list(session.scalars(select(Person).where(Person.id.in_(ids)))) if ids else []
+    if not people:
+        return back(here, "Tick some contacts first")
+    before = {p.id: p.vetting for p in people}
     for p in people:
-        {"approve": eng.approve, "reject": eng.reject, "pending": eng.unreview}[decision](p)
+        eng.decide(p, decision)
     n = len(people)
-    what = {"approve": "added to Contacts", "reject": "rejected", "pending": "moved back to review"}[decision]
+    what = {"approve": "added to Contacts", "reject": "rejected", "pending": "moved back to To vet",
+            "filtered": "moved back to Filtered out"}[decision]
     msg = f"{people[0].name} {what}" if n == 1 else f"{n} contacts {what}"
-    return back(f"/discovery/{e.key}?show={show}", msg)
+    session.commit()
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"ok": True, "message": msg, "ids": [p.id for p in people], "before": before,
+                             "counts": eng.counts(session, e)})
+    return back(here, msg)

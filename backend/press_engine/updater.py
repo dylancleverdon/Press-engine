@@ -22,7 +22,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -150,6 +150,14 @@ def uv_env(cfg) -> dict[str, str]:
     return env
 
 
+def set_phase(cfg, phase: str, **fields) -> dict:
+    """What the update banner shows: idle | installing | ready | error."""
+    state = read_state(cfg)
+    state.update({"phase": phase, **fields})
+    _write_state(cfg, state)
+    return state
+
+
 def install(cfg, rel: Release, *, runner: Runner = subprocess.run) -> Path:
     """Build a fresh venv for ``rel`` and mark it pending. Raises UpdateError on failure."""
     if not (cfg.desktop and cfg.app_support_dir and cfg.uv_path and rel.wheel_url):
@@ -163,7 +171,10 @@ def install(cfg, rel: Release, *, runner: Runner = subprocess.run) -> Path:
         [str(cfg.uv_path), "pip", "install", "--python", str(target / "bin" / "python"), rel.wheel_url],
         [str(target / "bin" / "python"), "-c", "import press_engine.api.app, press_engine.cli; print(press_engine.__version__)"],
     ]
-    for cmd in steps:
+    labels = [f"Preparing version {rel.version}", f"Downloading and installing version {rel.version}",
+              "Checking the new version works"]
+    for label, cmd in zip(labels, steps, strict=True):
+        set_phase(cfg, "installing", step=label, version=rel.version)
         try:
             done = runner(cmd, env=env, capture_output=True, text=True, timeout=900)
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -183,13 +194,53 @@ def maybe_update(http: httpx.Client, cfg, *, now: datetime | None = None, runner
     if not state.get("update_available"):
         return state
     rel = Release(**state["release"])
+    if read_state(cfg).get("phase") == "ready" and read_state(cfg).get("installed") == rel.version:
+        return read_state(cfg)  # already installed, waiting to restart
     try:
         install(cfg, rel, runner=runner)
     except UpdateError as e:
         log.error("update to %s failed: %s", rel.version, e)
-        state.update({"error": str(e), "installed": None})
+        state = read_state(cfg)
+        state.update({"error": str(e), "installed": None, "phase": "error", "step": None})
         _write_state(cfg, state)
         return state
-    state.update({"installed": rel.version, "installed_at": (now or utcnow()).isoformat()})
+    now = now or utcnow()
+    state = read_state(cfg)
+    state.update({"installed": rel.version, "installed_at": now.isoformat(), "phase": "ready", "step": None,
+                  "restart_at": (now + timedelta(seconds=RESTART_COUNTDOWN)).isoformat(), "postponed": False})
     _write_state(cfg, state)
     return state
+
+
+RESTART_COUNTDOWN = 60  # seconds between "update ready" and restarting
+
+
+def restart_due(cfg, now: datetime, *, busy: bool, local_hour: int) -> bool:
+    """Restart once the countdown is over and nothing is running. "Later" waits for
+    the night (1-5am local), still only when nothing is running."""
+    state = read_state(cfg)
+    if state.get("phase") != "ready" or busy:
+        return False
+    if state.get("postponed"):
+        return 1 <= local_hour < 5
+    try:
+        at = datetime.fromisoformat(state["restart_at"])
+    except (KeyError, TypeError, ValueError):
+        return True
+    return now >= at
+
+
+def banner(cfg, now: datetime) -> dict:
+    """What the page banner needs."""
+    state = read_state(cfg)
+    phase = state.get("phase") or "idle"
+    out = {"phase": phase, "step": state.get("step"), "version": state.get("installed") or state.get("version"),
+           "postponed": bool(state.get("postponed")), "restart_in": None, "error": state.get("error") if phase == "error" else None}
+    if phase == "ready" and state.get("installed") == __version__:
+        out["phase"] = "idle"  # we are that version now
+    elif phase == "ready" and not state.get("postponed"):
+        try:
+            out["restart_in"] = max(0, int((datetime.fromisoformat(state["restart_at"]) - now).total_seconds()))
+        except (KeyError, TypeError, ValueError):
+            out["restart_in"] = 0
+    return out

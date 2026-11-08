@@ -59,6 +59,17 @@
   }.get(section) %}
   {% if tabs %}<nav class="subnav">{% for href, label in tabs %}
     <a href="{{ href }}" class="{{ 'active' if path == href or (href != '/discovery' and path.startswith(href ~ '/')) }}">{{ label }}</a>{% endfor %}</nav>{% endif %}
+  {% set ub = update_banner or {} %}
+  <div id="update-banner" class="flash update-banner" data-phase="{{ ub.phase or 'idle' }}" data-restart-in="{{ ub.restart_in if ub.restart_in is not none else '' }}"
+       data-announce="{{ ub.announce or '' }}" data-owner="{{ '1' if user.is_owner else '' }}"
+       {{ 'hidden' if (ub.phase or 'idle') == 'idle' and not ub.announce }}>
+    {% if ub.phase == "installing" %}<span class="spinner" aria-hidden="true"></span> <b>Updating Press Engine:</b> <span data-step>{{ ub.step or "Getting the new version" }}…</span>
+    {% elif ub.phase == "ready" %}<b>Version {{ ub.version }} is installed.</b>
+      <span data-countdown>{% if ub.postponed %}It will be applied overnight, or next time you open Press Engine.{% else %}Press Engine restarts in {{ ub.restart_in }} seconds to switch over.{% endif %}</span>
+    {% elif ub.phase == "error" %}<b>The update didn't install:</b> {{ ub.error }}. Press Engine keeps running the current version and tries again later.
+    {% elif ub.announce %}<b>Updated to version {{ ub.announce }}.</b>
+      <a href="https://github.com/dylancleverdon/Press-engine/releases/tag/v{{ ub.announce }}" target="_blank" rel="noopener">What's new</a>{% endif %}
+  </div>
   {% if app_update %}<div class="flash">A new version of the Mac app ({{ app_update }}) is available.
     <a href="{{ app_update_url or 'https://github.com/dylancleverdon/Press-engine/releases/latest' }}">Download it</a>, then drag it into Applications to replace this one. Your data stays put.</div>{% endif %}
   {% if move_hint %}<div class="flash warn">Press Engine is running from the disk image. Quit it, drag it into your Applications folder and open it from there, so it can open at login and keep sending.</div>{% endif %}

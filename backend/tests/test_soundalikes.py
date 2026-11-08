@@ -304,7 +304,7 @@ def test_make_seed_from_in_use_refresh_and_auto_reload(db, services, session, la
         if "expand" not in client.get("/jobs/running").json()["running"]:
             break
         _time.sleep(0.1)
-    assert client.get("/jobs/running").json() == {"running": []}
+    assert client.get("/jobs/running").json()["running"] == []
     with db.session() as s:
         assert s.get(Artist, mh_id).is_seed
         assert s.scalar(select(Artist).where(Artist.name == "Portico Quartet")) is not None  # its own soundalikes

@@ -163,9 +163,12 @@ def resolve_pending(session: Session, svc, *, limit: int = 40, now: datetime | N
     ).all() if p not in with_bio]
     stats = {"checked": 0, "found_email": 0}
     seen: set[int] = set()
+    from .. import progress
+
     for person in people:
         if stats["checked"] >= limit:
             break
+        progress.tick(stats["checked"], limit)
         state = sa_inspect(person)
         has_unread_bio = person.resolved_at is None and any(i.type == IdentityType.LINKINBIO for i in person.identities)
         if state.was_deleted or state.deleted or person.id in seen or (verified_personal_email(person) and not has_unread_bio):

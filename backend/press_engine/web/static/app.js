@@ -93,3 +93,156 @@ document.addEventListener("paste", (e) => {
   }
   note.textContent = `${input.files.length} image${input.files.length === 1 ? "" : "s"} attached`;
 });
+
+// Discovery vetting without reloading the page (which jumped back to the top):
+// Approve / Reject / Back to To vet on a row, and the "ticked" buttons, are sent in the
+// background; the rows fade out, the counts update and an Undo appears for a few seconds.
+function showToast(text, undo) {
+  document.querySelector(".toast")?.remove();
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.setAttribute("role", "status");
+  const span = document.createElement("span");
+  span.textContent = text;
+  t.appendChild(span);
+  if (undo) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "Undo";
+    b.addEventListener("click", () => { t.remove(); undo(); });
+    t.appendChild(b);
+  }
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+}
+
+async function sendVet(url, data) {
+  const r = await fetch(url, { method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+function updateCounts(counts) {
+  for (const [state, n] of Object.entries(counts || {})) {
+    document.querySelectorAll(`[data-count="${state}"]`).forEach((el) => (el.textContent = n));
+  }
+}
+
+const UNDO_DECISION = { pending: "pending", rejected: "reject", approved: "approve", filtered: "filtered" };
+
+document.addEventListener("submit", async (e) => {
+  const form = e.target;
+  if (!form.classList?.contains("vet-form")) return;
+  const submitter = e.submitter;
+  if (!submitter || submitter.dataset.confirm) return; // "Approve all" etc: normal submit after the confirm dialog
+  const url = submitter.hasAttribute("formaction") ? submitter.formAction : form.action;
+  if (url.includes("everything=")) return;
+  e.preventDefault();
+  const data = new FormData(form);
+  data.set("decision", submitter.value);
+  const one = new URL(url, location.href).searchParams.get("one");
+  if (!one) {
+    if (!data.getAll("ids").length) { showToast("Tick some contacts first"); return; }
+  } else {
+    data.delete("ids");
+  }
+  submitter.disabled = true;
+  try {
+    const res = await sendVet(url, data);
+    const rows = res.ids.map((id) => document.getElementById(`person-${id}`)).filter(Boolean);
+    rows.forEach((row) => row.classList.add("leaving"));
+    setTimeout(() => rows.forEach((row) => row.remove()), 260);
+    updateCounts(res.counts);
+    showToast(res.message, async () => {
+      // Put each one back where it was.
+      const byState = {};
+      for (const [id, state] of Object.entries(res.before)) (byState[state] ||= []).push(id);
+      for (const [state, ids] of Object.entries(byState)) {
+        const undo = new FormData();
+        undo.set("decision", UNDO_DECISION[state] || "pending");
+        undo.set("show", data.get("show") || "pending");
+        ids.forEach((id) => undo.append("ids", id));
+        await sendVet(form.action, undo);
+      }
+      location.reload(); // simplest way to put the rows back in order
+    });
+  } catch (err) {
+    submitter.disabled = false;
+    showToast("That didn't go through. Try again, or refresh the page.");
+  }
+});
+
+// Update banner: progress while an update installs, a countdown before the restart
+// (Restart now / Later), "Restarting…" while the app switches over, and "Updated to X".
+(function updateBanner() {
+  const el = document.getElementById("update-banner");
+  if (!el) return;
+  const owner = el.dataset.owner === "1";
+  let restarting = false;
+
+  function render(s) {
+    el.innerHTML = "";
+    const add = (html) => el.insertAdjacentHTML("beforeend", html);
+    const text = (t) => { const span = document.createElement("span"); span.textContent = t; el.appendChild(span); };
+    if (restarting) {
+      add('<span class="spinner" aria-hidden="true"></span>');
+      text("Restarting Press Engine to finish the update… this page reloads by itself.");
+    } else if (s.phase === "installing") {
+      add('<span class="spinner" aria-hidden="true"></span> <b>Updating Press Engine:</b> ');
+      text(`${s.step || "Getting the new version"}…`);
+    } else if (s.phase === "ready") {
+      add(`<b>Version ${s.version} is installed.</b> `);
+      text(s.postponed ? "It will be applied overnight, or next time you open Press Engine."
+                       : `Press Engine restarts in ${s.restart_in ?? 0} seconds to switch over.`);
+      if (owner) {
+        const box = document.createElement("span");
+        box.className = "actions";
+        box.innerHTML = '<button type="button" class="primary" data-now>Restart now</button>' +
+          (s.postponed ? "" : '<button type="button" data-later>Later</button>');
+        el.appendChild(box);
+        box.querySelector("[data-now]").onclick = () => post("/app/restart-now");
+        const later = box.querySelector("[data-later]");
+        if (later) later.onclick = () => post("/app/restart-later");
+      }
+    } else if (s.phase === "error") {
+      add("<b>The update didn't install.</b> ");
+      text(`${s.error || ""} Press Engine keeps running the current version and tries again later.`);
+    } else if (s.announce) {
+      add(`<b>Updated to version ${s.announce}.</b> <a href="https://github.com/dylancleverdon/Press-engine/releases/tag/v${s.announce}" target="_blank" rel="noopener">What's new</a>`);
+      const box = document.createElement("span");
+      box.className = "actions";
+      box.innerHTML = '<button type="button">Dismiss</button>';
+      box.querySelector("button").onclick = async () => { el.hidden = true; await post("/app/update-dismiss", false); };
+      el.appendChild(box);
+    }
+    el.hidden = !(restarting || ["installing", "ready", "error"].includes(s.phase) || s.announce);
+  }
+
+  async function post(url, refresh = true) {
+    try { await fetch(url, { method: "POST", credentials: "same-origin" }); } catch (e) { /* ignore */ }
+    if (refresh) poll();
+  }
+
+  let timer = null;
+  async function poll() {
+    clearTimeout(timer);
+    let active = false;
+    try {
+      const r = await fetch("/app/update-status", { credentials: "same-origin" });
+      if (!r.ok) throw new Error();
+      const s = await r.json();
+      if (restarting) { location.reload(); return; } // back up on the new version
+      if (s.phase === "ready" && !s.postponed && s.restart_in === 0) restarting = true;
+      render(s);
+      el.dataset.phase = s.phase || "idle";
+      active = restarting || s.phase === "installing" || (s.phase === "ready" && !s.postponed);
+    } catch (e) {
+      // While an update is underway, a failed request means the app is restarting.
+      if (["installing", "ready"].includes(el.dataset.phase) || restarting) { restarting = true; render({}); active = true; }
+    }
+    timer = setTimeout(poll, active ? 1500 : 60000); // otherwise, check once a minute
+  }
+
+  const phase = el.dataset.phase;
+  timer = setTimeout(poll, phase === "installing" || phase === "ready" ? 300 : 60000);
+})();

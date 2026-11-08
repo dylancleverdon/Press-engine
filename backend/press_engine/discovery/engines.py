@@ -14,10 +14,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..appsettings import AppSettings
-from ..models import Person, PersonStatus, SearchRun
+from collections import Counter
 
-PENDING, APPROVED, REJECTED = "pending", "approved", "rejected"
-VETTING = (PENDING, APPROVED, REJECTED)
+from ..models import DM_PLATFORMS, IdentityType, Person, PersonStatus, SearchRun
+
+PENDING, APPROVED, REJECTED, FILTERED = "pending", "approved", "rejected", "filtered"
+VETTING = (PENDING, APPROVED, REJECTED, FILTERED)
+# How a find can be reached: an email, a DM platform only, or nothing found yet.
+REACH = ("email", "dm", "none")
 
 
 @dataclass(frozen=True)
@@ -98,16 +102,36 @@ def apply_vetting(session: Session, settings: AppSettings, engine: Engine, *, af
     return len(rows)
 
 
+DECISIONS = {"approve": APPROVED, "reject": REJECTED, "pending": PENDING, "filtered": FILTERED}
+
+
+def decide(person: Person, decision: str) -> None:
+    state = DECISIONS[decision]
+    person.vetting = state
+    if state != FILTERED:
+        person.vetting_reason = None
+
+
 def approve(person: Person) -> None:
-    person.vetting = APPROVED
+    decide(person, "approve")
 
 
 def reject(person: Person) -> None:
-    person.vetting = REJECTED
+    decide(person, "reject")
 
 
 def unreview(person: Person) -> None:
-    person.vetting = PENDING
+    decide(person, "pending")
+
+
+def reach(person: Person) -> str:
+    """"email", "dm" (a DM platform but no email) or "none"."""
+    types = {i.type for i in person.identities if not (i.type == IdentityType.EMAIL and i.bounced)}
+    if IdentityType.EMAIL in types:
+        return "email"
+    if types & {str(t) for t in DM_PLATFORMS}:
+        return "dm"
+    return "none"
 
 
 def counts(session: Session, engine: Engine) -> dict[str, int]:
@@ -125,10 +149,16 @@ def _found_by(engine: Engine):
     return Person.found_via.in_(engine.found_via)
 
 
-def people(session: Session, engine: Engine, vetting: str, *, limit: int = 100) -> list[Person]:
-    return list(session.scalars(select(Person).where(_found_by(engine), Person.vetting == vetting)
-                                .order_by(Person.taste_score.desc(), Person.followers.desc().nulls_last(), Person.id.desc())
-                                .limit(limit)))
+def people(session: Session, engine: Engine, vetting: str, *, limit: int | None = 100, how: str | None = None) -> list[Person]:
+    rows = session.scalars(select(Person).where(_found_by(engine), Person.vetting == vetting)
+                           .order_by(Person.taste_score.desc(), Person.followers.desc().nulls_last(), Person.id.desc()))
+    out = [p for p in rows if how is None or reach(p) == how]
+    return out[:limit] if limit else out
+
+
+def reach_counts(session: Session, engine: Engine, vetting: str) -> dict[str, int]:
+    c = Counter(reach(p) for p in people(session, engine, vetting, limit=None))
+    return {r: c.get(r, 0) for r in REACH}
 
 
 def recent_searches(session: Session, engine: Engine, *, limit: int = 30) -> list[SearchRun]:
@@ -146,25 +176,84 @@ def merged_channels(person: Person) -> int:
     return sum(1 for i in person.identities if i.type == "youtube" and i.value.startswith("UC"))
 
 
-def recheck_youtube(session: Session, settings: AppSettings) -> dict:
-    """Apply the current video rules to YouTube finds still waiting to be vetted:
-    drop videos that don't count, and move finds with nothing left to Rejected."""
+def youtube_rule_problem(person: Person, settings: AppSettings) -> str | None:
+    """Why a YouTube find breaks the current rules (after its videos were checked), or None."""
+    subs = person.followers
+    if subs is not None and subs < settings.youtube_min_subscribers:
+        return f"{subs:,} subscribers, under your minimum of {settings.youtube_min_subscribers:,}"
+    if subs is not None and settings.youtube_max_subscribers and subs > settings.youtube_max_subscribers:
+        return f"{subs:,} subscribers, over your maximum of {settings.youtube_max_subscribers:,}"
+    if not any(c.source == "youtube" for c in person.coverage):
+        return "no videos that count"
+    return None
+
+
+def apply_youtube_rules(session: Session, settings: AppSettings) -> dict:
+    """Apply the current YouTube rules to finds waiting to be vetted (and to ones the rules
+    filtered out before, which come back if they now pass). Uses no searches.
+
+    Videos that don't count are removed; finds left breaking a rule move to the
+    "Filtered out" tab with the reason. Nothing you approved or rejected is touched."""
     from .youtube import skip_reason
 
-    stats = {"checked": 0, "videos_dropped": 0, "rejected": 0, "merged_flagged": 0}
-    for p in people(session, ENGINES["youtube"], PENDING, limit=10_000):
+    yt = ENGINES["youtube"]
+    stats: dict = {"checked": 0, "videos_dropped": 0, "filtered": 0, "restored": 0, "merged_flagged": 0}
+    reasons: Counter = Counter()
+    for p in people(session, yt, PENDING, limit=None) + people(session, yt, FILTERED, limit=None):
         stats["checked"] += 1
+        dropped_why = []
         for c in list(p.coverage):
-            if c.source == "youtube" and skip_reason(c.title or "", c.summary or "", c.artist_name, settings):
+            if c.source != "youtube":
+                continue
+            why = skip_reason(c.title or "", c.summary or "", c.artist_name, settings)
+            if why:
+                dropped_why.append(why)
                 session.delete(c)
                 p.coverage.remove(c)
                 stats["videos_dropped"] += 1
-        if not any(c.source == "youtube" for c in p.coverage):
-            p.vetting = REJECTED
-            stats["rejected"] += 1
-        elif merged_channels(p) > 1 and not p.needs_review:
+        problem = youtube_rule_problem(p, settings)
+        if problem == "no videos that count" and dropped_why:
+            problem = f"no videos that count ({'; '.join(dict.fromkeys(dropped_why))})"
+        if problem:
+            if p.vetting != FILTERED:
+                stats["filtered"] += 1
+                reasons[_reason_group(problem)] += 1
+            p.vetting, p.vetting_reason = FILTERED, problem
+        elif p.vetting == FILTERED:
+            p.vetting, p.vetting_reason = PENDING, None
+            stats["restored"] += 1
+        if p.vetting == PENDING and merged_channels(p) > 1 and not p.needs_review:
             p.needs_review = True
             p.review_reason = "Holds several YouTube channels, probably merged by mistake. Check before approving."
             stats["merged_flagged"] += 1
+    stats["reasons"] = dict(reasons)
     session.flush()
     return stats
+
+
+def _reason_group(problem: str) -> str:
+    if "under your minimum" in problem:
+        return "under the subscriber minimum"
+    if "over your maximum" in problem:
+        return "over the subscriber maximum"
+    if "doesn't mention" in problem and "title has" not in problem:
+        return "videos don't mention the artist"
+    if "title has" in problem:
+        return "concert recordings, type beats and similar"
+    return "no videos that count"
+
+
+def describe_rules_result(st: dict) -> str:
+    if not st.get("checked"):
+        return "Nothing waiting to be vetted."
+    parts = [f"Checked {st['checked']} finds"]
+    if st["filtered"]:
+        why = ", ".join(f"{n} {r}" for r, n in sorted(st["reasons"].items(), key=lambda x: -x[1]))
+        parts.append(f"{st['filtered']} moved to Filtered out ({why})")
+    if st["restored"]:
+        parts.append(f"{st['restored']} back in To vet (they pass the rules now)")
+    if st["merged_flagged"]:
+        parts.append(f"{st['merged_flagged']} flagged as several channels merged")
+    if len(parts) == 1:
+        parts.append("everything follows the rules")
+    return ": ".join([parts[0], "; ".join(parts[1:])]) + "."

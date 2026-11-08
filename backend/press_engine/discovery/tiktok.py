@@ -45,7 +45,10 @@ def run_tiktok_discovery(session: Session, svc, settings: AppSettings, *, now: d
     known = KnownArtists(session)
     keys = set(known.by_key)
     stats: Counter = Counter()
-    for artist in searchable_artists(session, "last_tiktok_search_at", limit=budget):
+    from .. import progress
+
+    for n, artist in enumerate(searchable_artists(session, "last_tiktok_search_at", limit=budget), 1):
+        progress.step(f"TikTok: searching for {artist.name}", engine="tiktok", done=n, total=budget)
         query = f'site:tiktok.com "{artist.name}"'
         run = SearchRun(engine="tiktok", provider=svc.search.name, query=query, artist_id=artist.id, run_at=now)
         try:

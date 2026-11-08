@@ -168,6 +168,7 @@ class Person(Base):
     # Discovery vetting: engine finds wait as "pending" until approved (or auto-approved);
     # "rejected" ones are kept hidden so the engines don't add them again.
     vetting: Mapped[str] = mapped_column(String(12), default="approved", index=True)
+    vetting_reason: Mapped[str | None] = mapped_column(Text)  # why the engine's rules filtered it out
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)

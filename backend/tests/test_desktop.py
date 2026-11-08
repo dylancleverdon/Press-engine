@@ -226,11 +226,32 @@ def test_scheduler_update_tick_installs_and_restarts(db, services, router, deskt
     assert restarts == []
     clock["now"] += timedelta(minutes=3)
     sched.update_tick(clock["now"], AppSettings())
-    assert restarts == ["update to 9.0.0"]
+    assert restarts == []  # installed, but the banner counts down first
+    banner = updater.banner(desktop_cfg, clock["now"])
+    assert banner["phase"] == "ready" and banner["version"] == "9.0.0" and banner["restart_in"] == 60
     from press_engine.jobs import last_run
 
     with db.session() as s:
         assert last_run(s, "update").stats["installed"] == "9.0.0"
+    from press_engine.api import views
+
+    clock["now"] += timedelta(seconds=61)
+    views.RUNNING["discover"] = 1  # never restarts in the middle of a discovery run
+    try:
+        sched.restart_tick(clock["now"], AppSettings())
+        assert restarts == []
+    finally:
+        views.RUNNING.clear()
+    sched.restart_tick(clock["now"], AppSettings())
+    assert restarts == ["update to 9.0.0"]
+
+    # "Later" waits for the night.
+    restarts.clear()
+    updater.set_phase(desktop_cfg, "ready", postponed=True)
+    sched.restart_tick(datetime(2026, 11, 6, 14, 0), AppSettings(timezone="UTC"))
+    assert restarts == []
+    sched.restart_tick(datetime(2026, 11, 7, 2, 0), AppSettings(timezone="UTC"))
+    assert restarts == ["update to 9.0.0"]
     restarts.clear()
     sched.update_tick(clock["now"] + timedelta(hours=1), AppSettings(auto_update=False))
     assert restarts == []

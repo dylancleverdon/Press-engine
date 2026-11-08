@@ -16,7 +16,7 @@
       try {
         const r = await fetch("/jobs/running", { credentials: "same-origin" });
         const { running } = await r.json();
-        if (!running.includes("expand")) { location.replace("/seeds"); return; }
+        if (!running.includes("expand")) { location.replace("/seeds" + location.hash); return; }
       } catch (e) { /* keep trying */ }
       poll();
     }, 3000);
@@ -35,7 +35,7 @@
 <table>
   <tr><th>Seed</th><th>Tags</th><th>Contacts found</th><th>Fit</th><th></th></tr>
   {% for a in seeds %}
-  <tr style="{{ 'opacity:.5' if not a.active }}">
+  <tr id="artist-{{ a.id }}" style="{{ 'opacity:.5' if not a.active }}">
     <td><b>{{ a.name }}</b><div class="small muted">{{ "looked up " ~ local(a.expanded_at, "%d %b") if a.expanded_at else "soundalikes not looked up yet" }}</div></td>
     <td class="small">{% for t in a.tags or [] %}<span class="chip">{{ t }}</span>{% endfor %}</td>
     {% include "_fit_cells.html" %}
@@ -49,13 +49,13 @@
 <table>
   <tr><th>Artist</th><th>Why</th><th>Similarity</th><th></th></tr>
   {% for a in suggested %}
-  <tr>
+  <tr id="artist-{{ a.id }}">
     <td>{% if a.lastfm_url %}<a href="{{ a.lastfm_url }}" target="_blank" rel="noopener">{{ a.name }}</a>{% else %}{{ a.name }}{% endif %}</td>
     <td class="small">{{ a.suggested_reason or "" }}</td>
     <td>{{ (a.similarity * 100)|round|int }}%</td>
     <td>{% if user.is_owner %}<form method="post" action="/artists/{{ a.id }}/review" class="row" style="margin:0">
       <button class="primary" name="decision" value="accept">Use it</button>
-      <button name="decision" value="seed" title="Also look up its own soundalikes">Make seed</button>
+      <button name="decision" value="seed" title="Make it a seed straight away and look up its own soundalikes">Make seed</button>
       <button class="danger" name="decision" value="reject">Not us</button></form>{% endif %}</td>
   </tr>
   {% endfor %}
@@ -68,7 +68,7 @@
 <table>
   <tr><th>Artist</th><th>Similarity</th><th>Contacts found</th><th>Fit</th><th></th></tr>
   {% for a in in_use %}
-  <tr>
+  <tr id="artist-{{ a.id }}">
     <td>{% if a.lastfm_url %}<a href="{{ a.lastfm_url }}" target="_blank" rel="noopener">{{ a.name }}</a>{% else %}{{ a.name }}{% endif %}
       <div class="small muted">{{ parents.get(a.id, []) | join(", ") }}{% if a.source == "cocoverage" %}covered by your contacts{% endif %}</div></td>
     <td>{{ (a.similarity * 100)|round|int }}%</td>
@@ -89,7 +89,7 @@
 <h2>Excluded <span class="muted small">{{ excluded|length }}</span></h2>
 <table>
   {% for a in excluded %}
-  <tr style="opacity:.6"><td>{{ a.name }}</td><td class="small">{{ (a.fit_stats or {}).get("why", "") }}</td>
+  <tr id="artist-{{ a.id }}" style="opacity:.6"><td>{{ a.name }}</td><td class="small">{{ (a.fit_stats or {}).get("why", "") }}</td>
     <td>{% if user.is_owner %}<form method="post" action="/artists/{{ a.id }}/review" class="inline"><button name="decision" value="restore">Restore</button>
       <button name="decision" value="seed">Make seed</button></form>{% endif %}</td></tr>
   {% endfor %}

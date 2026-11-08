@@ -28,16 +28,28 @@ def job_expand(session: Session, svc, settings: AppSettings, now: datetime, *, f
 
 def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *, sources: tuple[str, ...] | None = None) -> dict:
     """Daily discovery: expand seeds -> press + creator engines -> resolve -> dedupe -> score."""
+    from . import progress
+
+    sources = sources or ("press", "youtube", "tiktok", "playlists")
+    progress.start(list(sources))
+    try:
+        return _discover(session, svc, settings, now, sources)
+    finally:
+        progress.finish()
+
+
+def _discover(session: Session, svc, settings: AppSettings, now: datetime, sources: tuple[str, ...]) -> dict:
+    from . import progress
     from .contacts.dedupe import find_merge_candidates
     from .contacts.resolve import resolve_pending
-    from .discovery.engines import ENGINES, apply_vetting, max_person_id
+    from .discovery.engines import ENGINES, apply_vetting, apply_youtube_rules, max_person_id
     from .discovery.playlists import run_playlist_discovery
     from .discovery.press import run_press_discovery
     from .discovery.tiktok import run_tiktok_discovery
     from .discovery.youtube import run_youtube_discovery
     from .scoring import score_heuristic, score_with_llm
 
-    sources = sources or ("press", "youtube", "tiktok", "playlists")
+    progress.step("Looking up soundalikes")
     stats: dict = {"soundalikes": job_expand(session, svc, settings, now)}
     session.commit()
     engines: dict[str, Callable] = {
@@ -45,21 +57,28 @@ def job_discover(session: Session, svc, settings: AppSettings, now: datetime, *,
         "tiktok": run_tiktok_discovery, "playlists": run_playlist_discovery,
     }
     for name in sources:
+        progress.step(f"{ENGINES[name].label}: starting", engine=name)
         before = max_person_id(session)
         try:
             stats[name] = engines[name](session, svc, settings, now=now)
             pending = apply_vetting(session, settings, ENGINES[name], after_id=before)
             if pending and isinstance(stats[name], dict):
                 stats[name]["waiting_for_review"] = pending
+            if name == "youtube" and isinstance(stats[name], dict):
+                stats[name]["rules"] = apply_youtube_rules(session, settings)
         except Exception as e:  # keep going with the other engines
             session.rollback()
             log.exception("%s discovery failed", name)
             stats[name] = {"error": str(e)[:300]}
         session.commit()
+    progress.step("Scoring new finds", engine="")
     score_heuristic(session, only_stale=True, now=now)
     session.commit()
+    progress.step("Reading link pages and websites for contact details")
     stats["resolve"] = resolve_pending(session, svc, now=now)
+    progress.step("Merging duplicates", done=1, total=2)
     stats["merge_candidates"] = find_merge_candidates(session)
+    progress.step("Scoring", done=1, total=2)
     stats["scored"] = score_heuristic(session, now=now)
     session.commit()
     stats["llm_scoring"] = score_with_llm(session, svc.score_llm, settings, now=now)
@@ -90,7 +109,37 @@ def job_sheet_sync(session: Session, svc, settings: AppSettings, now: datetime) 
     return sync(session, svc, settings, now=now)
 
 
+def on_start(db: Database, svc) -> dict:
+    """Once per version: settings changes that come with an update, the "Updated to X"
+    banner, and re-applying the engines' rules to what's waiting to be vetted."""
+    from . import __version__
+    from .appsettings import load_settings, update_settings
+
+    with db.session() as s:
+        settings = load_settings(s)
+        if settings.last_run_version == __version__:
+            return {}
+        changes: dict = {"last_run_version": __version__}
+        if settings.last_run_version:  # an update, not a first start
+            changes["announce_version"] = __version__
+            if settings.youtube_daily_searches == 30:  # the old default; Google allows ~100 a day
+                changes["youtube_daily_searches"] = 60
+        update_settings(s, **changes)
+    from .api import views
+
+    views.run_in_background(db, svc, "rules")
+    return changes
+
+
+def job_rules(session: Session, svc, settings: AppSettings, now: datetime) -> dict:
+    """Apply the engines' current rules to finds waiting to be vetted (no searching)."""
+    from .discovery.engines import apply_youtube_rules
+
+    return {"youtube": apply_youtube_rules(session, settings)}
+
+
 JOBS: dict[str, Callable] = {
+    "rules": job_rules,
     "sheet_sync": job_sheet_sync,
     "expand": job_expand,
     "discover": job_discover,

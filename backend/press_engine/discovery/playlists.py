@@ -90,7 +90,10 @@ def run_playlist_discovery(session: Session, svc, settings: AppSettings, *, now:
         return {"skipped": "daily playlist search budget used up"}
     known = KnownArtists(session)
     stats: Counter = Counter()
-    for artist in searchable_artists(session, "last_playlist_search_at", limit=budget):
+    from .. import progress
+
+    for n, artist in enumerate(searchable_artists(session, "last_playlist_search_at", limit=budget), 1):
+        progress.step(f"Spotify: searching for {artist.name}", engine="playlists", done=n, total=budget)
         q = f'"{artist.name}"'
         run = SearchRun(engine="spotify", provider="spotify", query=q, artist_id=artist.id, run_at=now)
         try:

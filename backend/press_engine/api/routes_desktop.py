@@ -5,6 +5,7 @@ terminal."""
 from __future__ import annotations
 
 import secrets
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from ..discovery.lastfm import add_seed
 from ..models import User
 from ..outreach.google_auth import GoogleAuthError
 from ..util.timeutil import system_timezone_name
-from .deps import create_user, get_db, get_svc, rotate_token, web_owner
+from .deps import create_user, get_db, get_svc, rotate_token, web_owner, web_user
 
 router = APIRouter(include_in_schema=False)
 
@@ -263,12 +264,48 @@ def check_updates(request: Request, user: User = Depends(web_owner), session: Se
         msg = (f"Version {state['latest']} is available: update with git pull + pip install."
                if state.get("latest") and updater.newer(state.get("latest"), __version__) else "You're up to date.")
         return _back("/connections", state.get("error") or msg)
-    state = updater.maybe_update(svc.http, svc.cfg)
-    if state.get("installed"):
-        return _back("/connections", _restart_or_message(svc, f"Installed version {state['installed']}"))
+    state = updater.check(svc.http, svc.cfg)
     if state.get("error"):
         return _back("/connections", f"Update check failed: {state['error']}")
-    return _back("/connections", f"You're up to date (version {__version__}).")
+    if not state.get("update_available"):
+        return _back("/connections", f"You're up to date (version {__version__}).")
+    # Install in the background; the banner at the top shows progress and the restart countdown.
+    updater.set_phase(svc.cfg, "installing", step=f"Getting version {state['latest']}", version=state["latest"], error=None)
+    threading.Thread(target=updater.maybe_update, args=(svc.http, svc.cfg), daemon=True, name="update").start()
+    return _back("/connections", f"Updating to version {state['latest']}. Progress shows at the top of the page.")
+
+
+@router.get("/app/update-status")
+def update_status(user: User = Depends(web_user), session: Session = Depends(get_db), svc=Depends(get_svc)):
+    from ..appsettings import load_settings
+    from ..util.timeutil import utcnow
+
+    out = updater.banner(svc.cfg, utcnow()) if svc.cfg.desktop else {"phase": "idle"}
+    out["announce"] = load_settings(session).announce_version or None
+    out["current"] = __version__
+    return out
+
+
+@router.post("/app/restart-now")
+def restart_now(user: User = Depends(web_owner), svc=Depends(get_svc)):
+    from ..util.timeutil import utcnow
+
+    state = updater.read_state(svc.cfg)
+    if state.get("phase") == "ready":
+        updater.set_phase(svc.cfg, "ready", restart_at=utcnow().isoformat(), postponed=False)
+    return {"ok": True}
+
+
+@router.post("/app/restart-later")
+def restart_later(user: User = Depends(web_owner), svc=Depends(get_svc)):
+    updater.set_phase(svc.cfg, "ready", postponed=True)
+    return {"ok": True, "message": "The update will be applied overnight, or next time you open Press Engine."}
+
+
+@router.post("/app/update-dismiss")
+def update_dismiss(user: User = Depends(web_user), session: Session = Depends(get_db)):
+    update_settings(session, announce_version="")
+    return {"ok": True}
 
 
 @router.post("/app/auto-update")

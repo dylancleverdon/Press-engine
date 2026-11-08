@@ -11,35 +11,42 @@
 <div class="panel"><h3>Coming soon</h3><p>{{ engine.coming_soon }}</p>
   <p class="small muted">Until then, Twitch links found on other creators' channels and link pages are already saved on their contacts.</p></div>
 {% else %}
-{% if running %}
-<div class="flash">Discovery is running… this page refreshes by itself when it's done.</div>
-<script>
-  (function poll() {
-    setTimeout(async () => {
-      try {
-        const r = await fetch("/jobs/running", { credentials: "same-origin" });
-        const { running } = await r.json();
-        if (!running.includes("discover")) { location.replace(location.pathname + location.search); return; }
-      } catch (e) { /* keep trying */ }
-      poll();
-    }, 3000);
-  })();
-</script>
+{% if running %}{% include "_progress.html" %}{% endif %}
+
+{% if status.last %}
+<div class="status-line small {{ '' if status.last.ok else 'bad' }}">
+  <b>Last run {{ local(status.last.at) }}:</b> {{ status.last.text }}</div>
 {% endif %}
 
 <div class="cols">
 <div>
   <nav class="subnav">
-    {% for v, label in [("pending", "To vet"), ("approved", "Approved"), ("rejected", "Rejected")] %}
-    <a href="?show={{ v }}" class="{{ 'active' if show == v }}">{{ label }} <span class="muted">{{ counts[v] }}</span></a>{% endfor %}
+    {% for v, label in [("pending", "To vet"), ("approved", "Approved"), ("rejected", "Rejected"), ("filtered", "Filtered out")] %}
+    {% if v != "filtered" or counts[v] or engine.key == "youtube" %}
+    <a href="?show={{ v }}" class="{{ 'active' if show == v }}">{{ label }} <span class="muted" data-count="{{ v }}">{{ counts[v] }}</span></a>{% endif %}{% endfor %}
   </nav>
+  {% if show == "filtered" %}<p class="small muted">Finds that break this engine's rules (below, on the right), with the reason.
+    They aren't contacts and are never pitched. If you loosen a rule they come back to To vet by themselves.</p>{% endif %}
+  {% if reach_counts.values() | sum %}
+  <div class="row small" style="margin-bottom:8px">Show:
+    <a href="?show={{ show }}" class="chip {{ 'ok' if not how }}">All {{ reach_counts.values() | sum }}</a>
+    <a href="?show={{ show }}&how=email" class="chip {{ 'ok' if how == 'email' }}">Has email {{ reach_counts.email }}</a>
+    <a href="?show={{ show }}&how=dm" class="chip {{ 'ok' if how == 'dm' }}">DMs only {{ reach_counts.dm }}</a>
+    <a href="?show={{ show }}&how=none" class="chip {{ 'ok' if how == 'none' }}">No contact yet {{ reach_counts.none }}</a>
+  </div>
+  {% endif %}
   {% if rows %}
-  <form method="post" action="/discovery/{{ engine.key }}/vet">
-    <input type="hidden" name="show" value="{{ show }}">
+  <form method="post" action="/discovery/{{ engine.key }}/vet" class="vet-form">
+    <input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="how" value="{{ how or '' }}">
     {% if user.is_owner %}<div class="row" style="margin-bottom:8px">
-      <label class="inline"><input type="checkbox" onclick="document.querySelectorAll('input[name=ids]').forEach(c => c.checked = this.checked)"> All</label>
+      <label class="inline"><input type="checkbox" onclick="document.querySelectorAll('input[name=ids]').forEach(c => c.checked = this.checked)"> Tick all</label>
       {% if show != "approved" %}<button name="decision" value="approve">Approve ticked</button>{% endif %}
       {% if show != "rejected" %}<button name="decision" value="reject" class="danger">Reject ticked</button>{% endif %}
+      <span class="grow"></span>
+      {% if show != "approved" %}<button name="decision" value="approve" formaction="/discovery/{{ engine.key }}/vet?everything=1"
+        data-confirm="Approve all {{ shown_total }} shown here and add them to Contacts?">Approve all {{ shown_total }}</button>{% endif %}
+      {% if show != "rejected" %}<button name="decision" value="reject" class="danger" formaction="/discovery/{{ engine.key }}/vet?everything=1"
+        data-confirm="Reject all {{ shown_total }} shown here?">Reject all {{ shown_total }}</button>{% endif %}
     </div>{% endif %}
     <table>
       <tr><th></th><th>Who</th><th>Found through</th><th>What they made</th><th>Contact</th><th></th></tr>
@@ -47,11 +54,12 @@
       {% set covs = p.coverage | sort(attribute="id", reverse=true) %}
       {% set via = (covs | map(attribute="artist_name") | unique | list) %}
       {% set found_by = artist_names.get(p.discovered_artist_id) %}
-      <tr>
+      <tr id="person-{{ p.id }}" data-name="{{ p.name }}">
         <td>{% if user.is_owner %}<input type="checkbox" name="ids" value="{{ p.id }}">{% endif %}</td>
         <td><a href="/contacts/{{ p.id }}">{{ p.name }}</a>
           {% if merged_channels(p) > 1 %}<span class="chip warn" title="Separate channels were probably merged by mistake">{{ merged_channels(p) }} channels</span>{% endif %}
           <div class="small muted">{% if p.followers %}{{ "{:,}".format(p.followers) }} followers{% endif %}{% if p.country %} · {{ p.country }}{% endif %}</div>
+          {% if p.vetting_reason %}<div class="small warn">{{ p.vetting_reason }}</div>{% endif %}
           {% for i in p.identities if i.type not in ("email", "site") %}{% set link = profile_url(i.type, i.value) %}{% if link and loop.index <= 3 %}
             <a class="small" href="{{ link }}" target="_blank" rel="noopener">{{ i.type }}</a>{% endif %}{% endfor %}</td>
         <td class="small">{% if found_by %}<span class="chip">{{ found_by }}</span>{% endif %}
@@ -61,16 +69,17 @@
         <td class="small">{{ contact_line(p, settings) }}</td>
         <td>{% if user.is_owner %}<div class="row" style="flex-wrap:nowrap">
           {% if show != "approved" %}<button class="primary" name="decision" value="approve" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Approve</button>{% endif %}
-          {% if show != "rejected" %}<button class="danger" name="decision" value="reject" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Reject</button>{% endif %}
+          {% if show not in ("rejected", "filtered") %}<button class="danger" name="decision" value="reject" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Reject</button>{% endif %}
+          {% if show in ("rejected", "filtered") %}<button name="decision" value="pending" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Back to To vet</button>{% endif %}
           <a class="button" href="/contacts/{{ p.id }}/report?next=/discovery/{{ engine.key }}%3Fshow%3D{{ show }}" title="Something wrong with this find? Describe it and the details go to the suggestions sheet">Report</a>
-          {% if show != "pending" and show != "approved" %}<button name="decision" value="pending" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Back to review</button>{% endif %}
         </div>{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
+    {% if shown_total > rows|length %}<p class="small muted">Showing the top {{ rows|length }} of {{ shown_total }}. "Approve all" and "Reject all" cover all {{ shown_total }}.</p>{% endif %}
   </form>
   {% else %}
-  <p class="muted">{{ {"pending": "Nothing waiting to be vetted.", "approved": "Nothing approved from this engine yet.", "rejected": "Nothing rejected."}[show] }}</p>
+  <p class="muted">{{ {"pending": "Nothing waiting to be vetted.", "approved": "Nothing approved from this engine yet.", "rejected": "Nothing rejected.", "filtered": "Nothing filtered out."}[show] }}{% if how %} (with this filter){% endif %}</p>
   {% endif %}
 
   {% if searches %}
@@ -86,19 +95,28 @@
 </div>
 
 <div>
+  {% if status.cap %}
+  <div class="panel small">
+    <b>Searches today: {{ status.used }} of {{ status.cap }}</b>
+    <div class="meter {{ 'full' if status.used >= status.cap }}"><div style="width: {{ [100, (100 * status.used / status.cap) | round] | min if status.cap else 0 }}%"></div></div>
+    {% if status.next_free %}<span class="warn">Used up. More become available from {{ local(status.next_free, "%a %H:%M") }}.</span>
+    {% else %}<span class="muted">The count covers the last 24 hours.</span>{% endif %}
+    {% if engine.key == "youtube" %}<div class="muted" style="margin-top:4px">Google also has its own free limit of about 100 searches a day.</div>{% endif %}
+  </div>
+  {% endif %}
+  {% if engine.key == "youtube" and user.is_owner %}
+  <form method="post" action="/discovery/youtube/recheck" class="panel">
+    <h3>Apply the rules to what's waiting</h3>
+    <p class="small muted">Checks everything in To vet (and Filtered out) against the rules below, without searching.
+      This also happens by itself after each update and whenever you save these settings.</p>
+    <button>Apply rules now</button></form>
+  {% endif %}
   {% if user.is_owner and fields %}
   <form method="post" action="/discovery/{{ engine.key }}/settings" class="panel">
     <h3>How {{ engine.label }} searches</h3>
     {% for f in fields %}{{ fields_macro.field(*f) }}{% endfor %}
     <button class="primary" style="margin-top:10px">Save</button>
   </form>
-  {% endif %}
-  {% if engine.key == "youtube" and user.is_owner %}
-  <form method="post" action="/discovery/youtube/recheck" class="panel"
-        data-confirm="Re-check everything waiting to be vetted with the current rules? Videos that don't count are removed, and finds with nothing left move to Rejected (you can move them back).">
-    <h3>Clean up finds waiting to be vetted</h3>
-    <p class="small muted">Applies the rules above to what's already here: drops videos that don't name the artist or match the skip list, and rejects channels with nothing left.</p>
-    <button>Re-check finds</button></form>
   {% endif %}
   {% if engine.key == "captures" %}
   <div class="panel small"><h3>Adding Instagram creators</h3>

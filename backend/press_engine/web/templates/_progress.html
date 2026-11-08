@@ -1,0 +1,25 @@
+{# Progress bar for a running discovery; reloads the page when it's done. #}
+<div class="panel progress-panel" id="progress">
+  {% set pn = progress_now or {} %}
+  <div class="row"><b class="grow" id="progress-step">{{ pn.step or "Discovery is running…" }}</b>
+    <span class="muted small" id="progress-count">{% if pn.total %}{{ pn.done }} / {{ pn.total }}{% endif %}</span></div>
+  <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width: {{ [pn.percent or 2, 2] | max }}%"></div></div>
+  <p class="small muted" style="margin:6px 0 0">This page refreshes by itself when it's done. You can keep vetting meanwhile.</p>
+</div>
+<script>
+  (function poll() {
+    setTimeout(async () => {
+      try {
+        const r = await fetch("/jobs/running", { credentials: "same-origin" });
+        const { running, progress } = await r.json();
+        if (!running.includes("discover")) { location.replace(location.pathname + location.search); return; }
+        if (progress && progress.step) {
+          document.getElementById("progress-step").textContent = progress.step;
+          document.getElementById("progress-fill").style.width = Math.max(2, progress.percent || 0) + "%";
+          document.getElementById("progress-count").textContent = progress.total ? `${progress.done} / ${progress.total}` : "";
+        }
+      } catch (e) { /* keep trying */ }
+      poll();
+    }, 1500);
+  })();
+</script>

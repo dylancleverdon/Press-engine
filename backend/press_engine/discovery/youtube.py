@@ -58,6 +58,24 @@ class YouTubeError(RuntimeError):
     pass
 
 
+class YouTubeQuotaError(YouTubeError):
+    """Google's free daily allowance (10,000 units) is used up."""
+
+
+QUOTA_MESSAGE = ("Stopped: Google's free daily YouTube allowance is used up. It resets at midnight "
+                 "Pacific time ({local}). Searches done before that were kept.")
+
+
+def quota_reset_local(tz_name: str, now: datetime) -> str:
+    """When Google's quota resets (midnight US Pacific), in the user's time."""
+    from ..util.timeutil import get_tz, to_local
+
+    pacific = get_tz("America/Los_Angeles")
+    p_now = to_local(now, pacific)
+    midnight = (p_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return to_local(midnight, get_tz(tz_name)).strftime("%H:%M your time")
+
+
 class YouTubeClient:
     """YouTube Data API v3, authorised by an API key or by the Google sign-in (OAuth token)."""
 
@@ -85,6 +103,8 @@ class YouTubeClient:
             r = self.http.get(f"{API}/{path}", params=params, headers=headers)
         except httpx.HTTPError as e:
             raise YouTubeError(f"YouTube unreachable: {e}") from e
+        if r.status_code == 403 and ("quotaExceeded" in r.text or "dailyLimitExceeded" in r.text):
+            raise YouTubeQuotaError("Google's daily YouTube allowance is used up")
         if r.status_code != 200:
             raise YouTubeError(f"YouTube API {r.status_code}: {r.text[:200]}")
         return r.json()
@@ -132,17 +152,31 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
     stats = defaultdict(int)
     hits: dict[str, list[tuple[str, dict, str, str]]] = defaultdict(list)  # channel -> (artist, item, url, kind)
 
+    from .. import progress
+
+    planned, n = budget, 0
+    progress.step(f"YouTube: searching (0 of {planned})", engine="youtube", done=0, total=planned)
     for artist in searchable_artists(session, "last_youtube_search_at", limit=budget // per_artist + 1):
+        if stats.get("quota"):
+            break
         done = searches_since(session, "youtube", datetime.min)  # rotate templates across runs
         for i in range(per_artist):
             if budget <= 0:
                 break
+            n += 1
+            progress.step(f"YouTube: searching for {artist.name} ({n} of {planned})", done=n, total=planned)
             template, kind = PLAN[(done + i) % len(PLAN)]
             q = template.format(artist=f'"{artist.name}"')
             budget -= 1
             run = SearchRun(engine="youtube", provider="youtube", query=q, artist_id=artist.id, run_at=now)
             try:
                 items = yt.search(q, kind=kind, published_after=now - timedelta(days=730))
+            except YouTubeQuotaError as e:
+                run.error = str(e)
+                session.add(run)
+                stats["quota"] = 1
+                stats["stopped"] = QUOTA_MESSAGE.format(local=quota_reset_local(settings.timezone, now))
+                break
             except YouTubeError as e:
                 run.error = str(e)[:500]
                 session.add(run)
@@ -167,11 +201,16 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
 
     if not hits:
         return dict(stats)
+    progress.step(f"YouTube: looking up {len(hits)} channels", done=0, total=len(hits))
     try:
         channels = yt.channels(list(hits))
+    except YouTubeQuotaError:
+        return {**stats, "stopped": QUOTA_MESSAGE.format(local=quota_reset_local(settings.timezone, now))
+                + f" {len(hits)} channels found by today's searches couldn't be looked up yet."}
     except YouTubeError as e:
         return {**stats, "error": str(e)}
-    for ch in channels:
+    for n_ch, ch in enumerate(channels, 1):
+        progress.tick(n_ch, len(channels))
         snip = ch.get("snippet") or {}
         st = ch.get("statistics") or {}
         subs = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount") or 0)

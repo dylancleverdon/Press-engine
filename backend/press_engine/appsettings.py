@@ -121,6 +121,8 @@ class AppSettings(BaseModel):
     daily_dm_target: int = 10
     sending_paused: bool = False
     auto_update: bool = True  # Mac app: install new releases automatically
+    last_run_version: str = ""  # version that last started; a change means an update just landed
+    announce_version: str = ""  # "Updated to X" banner, until dismissed
 
     # --- Dedupe / cooldowns (spec §4.6) ---
     cooldown_days: int = 30
@@ -129,7 +131,7 @@ class AppSettings(BaseModel):
     # --- Discovery (spec §1, §4.2-4.3) ---
     daily_new_contacts_target: int = 20
     search_daily_budget: int = 60
-    youtube_daily_searches: int = 30
+    youtube_daily_searches: int = 60
     tiktok_daily_searches: int = 10
     playlist_daily_searches: int = 10
     youtube_min_subscribers: int = 100

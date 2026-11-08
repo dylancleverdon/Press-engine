@@ -44,6 +44,12 @@ def create_app(*, db: Database | None = None, svc=None, start_scheduler: bool | 
 
         scheduler = Scheduler(db, svc) if run_scheduler else None
         if scheduler:
+            from ..jobs import on_start
+
+            try:
+                on_start(db, svc)
+            except Exception:  # never stop the app from starting
+                logging.getLogger(__name__).exception("start-up tasks failed")
             scheduler.start()
             runtime.attach_scheduler(scheduler)
         yield

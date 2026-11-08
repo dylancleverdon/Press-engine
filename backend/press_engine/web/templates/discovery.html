@@ -6,7 +6,7 @@
 <p class="muted">Step one is the soundalikes: artists the band sounds like. Each engine then looks for people who cover them.
   What an engine finds waits on its page for you to approve before it's added to Contacts, unless you switch on its auto-approve.
   {% if last_run %}Last full run {{ local(last_run.started_at) }}. {% endif %}Runs daily at {{ settings.discovery_time }}.</p>
-{% if running %}<div class="flash">Discovery is running…</div>{% endif %}
+{% if running %}{% include "_progress.html" %}{% endif %}
 
 <div class="engine-grid">
   <a class="panel engine-card" href="/seeds">

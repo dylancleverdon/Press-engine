@@ -56,7 +56,7 @@ def test_engine_finds_wait_for_vetting_and_skip_the_queue(session, youtube):
     eng.approve(p)
     assert views.search_people(session)[1] == 1
     eng.reject(p)
-    assert eng.counts(session, yt) == {"pending": 0, "approved": 0, "rejected": 1, "total": 1}
+    assert eng.counts(session, yt) == {"pending": 0, "approved": 0, "rejected": 1, "filtered": 0, "total": 1}
     # A later run finds the same channel again: it stays rejected rather than coming back.
     session.commit()
     job_discover(session, youtube, load_settings(session), NOW, sources=("youtube",))
@@ -186,8 +186,8 @@ def test_youtube_skips_unrelated_and_live_videos(session, services, router):
     p.vetting = "pending"
     add_coverage(session, p, url="https://www.youtube.com/watch?v=x", artist_name="Crumb", title="FIRST TIME Hearing YES", source="youtube")
     session.flush()
-    st = eng.recheck_youtube(session, load_settings(session))
-    assert st["videos_dropped"] == 1 and st["rejected"] == 0 and len(p.coverage) == 1
+    st = eng.apply_youtube_rules(session, load_settings(session))
+    assert st["videos_dropped"] == 1 and st["filtered"] == 0 and len(p.coverage) == 1
 
 
 def test_link_pages_embedded_links_and_twitch():
@@ -240,3 +240,129 @@ def test_report_twitch_and_back_button_pages(db, services, session, youtube):
     page = client.get("/suggestions").text
     assert f"/suggestions/{sid}/images/1" in page and "Details attached" in page
     assert client.get(f"/suggestions/{sid}/images/1").content == b"\x89PNG x"
+
+
+def test_rules_filter_out_and_restore_without_searching(session):
+    """#26: the current rules apply to what's waiting, into a Filtered out tab, using no searches."""
+    from press_engine.contacts.ingest import add_coverage
+
+    def find(name, subs, title):
+        p = f.person(session, name)
+        p.found_via, p.vetting, p.followers = "youtube", "pending", subs
+        add_coverage(session, p, url=f"https://www.youtube.com/watch?v={name}", artist_name="Crumb", title=title, source="youtube")
+        return p
+
+    good = find("Reviewer", 5000, "Crumb - AMAMA album review")
+    live = find("Gig Filmer", 5000, "Crumb live at Primavera full set")
+    small = find("Tiny", 40, "Crumb reaction")
+    session.flush()
+    st = eng.apply_youtube_rules(session, load_settings(session))
+    assert (good.vetting, live.vetting, small.vetting) == ("pending", "filtered", "filtered")
+    assert "live at" in live.vetting_reason and "under your minimum of 100" in small.vetting_reason
+    assert st["filtered"] == 2 and "2 moved to Filtered out" in eng.describe_rules_result(st)
+    update_settings(session, youtube_min_subscribers=10)
+    st = eng.apply_youtube_rules(session, load_settings(session))
+    assert small.vetting == "pending" and small.vetting_reason is None and st["restored"] == 1
+    assert eng.counts(session, eng.ENGINES["youtube"])["filtered"] == 1
+
+
+def test_reach_filter_and_bulk_vetting_without_reload(db, services, session, youtube):
+    from fastapi.testclient import TestClient
+
+    from press_engine.api.app import create_app
+    from press_engine.api.deps import create_user
+
+    session.commit()
+    with db.session() as s:
+        _, token = create_user(s, "D", role="owner")
+        f.artist(s, "Mammal Hands", seed=True)
+    from press_engine.jobs import run_job
+
+    run_job(db, youtube, "discover", now=NOW, sources=("youtube",))
+    with db.session() as s:
+        jazz = s.scalar(select(Person.id).where(Person.name == "Jazz Reviews"))
+        huge = s.scalar(select(Person.id).where(Person.name == "Huge Channel"))
+    client = TestClient(create_app(db=db, svc=youtube, start_scheduler=False))
+    client.post("/login", data={"token": token, "next": "/"})
+
+    page = client.get("/discovery/youtube?how=email").text
+    assert "Jazz Reviews" in page and "Huge Channel" not in page and "Has email 1" in page and "No contact yet 1" in page
+    assert "Last run" in page and "Finished: 2 searches, 2 new" in page and "Searches today: 0 of 60" in page  # test searches are dated days ago
+
+    # A row's Approve from the page's script: JSON back, no redirect (no jump to the top).
+    r = client.post(f"/discovery/youtube/vet?one={jazz}", data={"decision": "approve", "show": "pending"},
+                    headers={"Accept": "application/json"})
+    body = r.json()
+    assert body["ok"] and body["before"] == {str(jazz): "pending"} and body["counts"]["approved"] == 1
+    # Undo puts it back.
+    client.post("/discovery/youtube/vet", data={"decision": "pending", "ids": [jazz]}, headers={"Accept": "application/json"})
+    # "Reject all" in a filter covers everything in it.
+    r = client.post("/discovery/youtube/vet?everything=1", data={"decision": "reject", "show": "pending", "how": "none"},
+                    follow_redirects=False)
+    assert "Huge Channel rejected" in unquote(r.headers["location"])
+    with db.session() as s:
+        assert s.get(Person, huge).vetting == "rejected" and s.get(Person, jazz).vetting == "pending"
+
+
+def test_engine_status_explains_why_a_run_stopped(session, services, router):
+    from press_engine.api.routes_discovery import describe_engine_stats
+    from press_engine.discovery.youtube import run_youtube_discovery
+
+    f.artist(session, "Crumb", seed=True)
+    router.add("GET", f"{YT}/search", lambda req: __import__("httpx").Response(
+        403, json={"error": {"errors": [{"reason": "quotaExceeded"}]}}, ))
+    services.youtube = YouTubeClient("k", services.http)
+    stats = run_youtube_discovery(session, services, load_settings(session), now=NOW)
+    assert "Google's free daily YouTube allowance is used up" in stats["stopped"] and "your time" in stats["stopped"]
+    assert len(router.requests_to(f"{YT}/search")) == 1  # stops instead of burning through every search
+    assert describe_engine_stats(stats)["ok"] is False
+    assert "already used up" in describe_engine_stats({"skipped": "daily YouTube search budget used up"})["text"]
+    assert describe_engine_stats({"searches": 4, "new_people": 2, "waiting_for_review": 2})["text"].startswith("Finished: 4 searches")
+
+
+def test_progress_and_first_start_after_an_update(db, services, session, youtube, monkeypatch):
+    from press_engine import __version__, progress
+    from press_engine.jobs import on_start
+
+    seen = []
+    real_step = progress.step
+    monkeypatch.setattr(progress, "step", lambda text, **kw: (seen.append(text), real_step(text, **kw)))
+    f.artist(session, "Mammal Hands", seed=True)
+    job_discover(session, youtube, load_settings(session), NOW, sources=("youtube",))
+    assert any(t.startswith("YouTube: searching for Mammal Hands") for t in seen) and progress.current() == {}
+    progress.start(["youtube"])
+    progress.step("YouTube: searching", engine="youtube", done=5, total=10)
+    assert 0 < progress.current()["percent"] < 100
+    progress.finish()
+
+    update_settings(session, last_run_version="0.0.1", youtube_daily_searches=30)
+    session.commit()
+
+    monkeypatch.setattr(views, "run_in_background", lambda db, svc, job, **kw: seen.append(f"job:{job}"))
+    changes = on_start(db, services)
+    assert changes["announce_version"] == __version__ and changes["youtube_daily_searches"] == 60
+    assert "job:rules" in seen
+    assert on_start(db, services) == {}  # only once per version
+
+
+def test_make_seed_lands_on_the_artist(db, services, session):
+    from fastapi.testclient import TestClient
+
+    from press_engine.api.app import create_app
+    from press_engine.api.deps import create_user
+
+    session.commit()
+    with db.session() as s:
+        _, token = create_user(s, "D", role="owner")
+        sug = f.artist(s, "Her's", similarity=0.3)
+        sug.review = "suggested"
+        sid = sug.id
+    client = TestClient(create_app(db=db, svc=services, start_scheduler=False))
+    client.post("/login", data={"token": token, "next": "/"})
+    r = client.post(f"/artists/{sid}/review", data={"decision": "seed"}, follow_redirects=False)
+    assert r.headers["location"].endswith(f"#artist-{sid}") and "moved up to Seeds" in unquote(r.headers["location"])
+    page = client.get("/seeds").text
+    seeds = page[page.index("<h2>Seeds"):page.index("Suggested soundalikes")]
+    assert f'id="artist-{sid}"' in seeds
+    r = client.post("/seeds", data={"names": "Hers"}, follow_redirects=False)
+    assert "#artist-" in r.headers["location"]

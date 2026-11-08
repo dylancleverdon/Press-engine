@@ -52,7 +52,9 @@ def seeds(request: Request, user: User = Depends(web_user), session: Session = D
 @router.get("/jobs/running")
 def jobs_running(user: User = Depends(web_user)):
     """Polled by pages that refresh themselves when a background job finishes."""
-    return {"running": views.running_jobs()}
+    from .. import progress
+
+    return {"running": views.running_jobs(), "progress": progress.current()}
 
 
 @router.post("/artists/{aid}/review")
@@ -70,9 +72,9 @@ def review(request: Request, aid: int, decision: str = Form(...), user: User = D
         session.commit()
         if svc.lastfm is not None:  # look up its own soundalikes straight away
             views.run_in_background(request.app.state.db, svc, "expand")
-            msg = f"{a.name} is now a seed. Looking up its soundalikes now"
+            msg = f"{a.name} is now a seed (moved up to Seeds). Looking up its soundalikes now"
         else:
-            msg = f"{a.name} is now a seed. Add a Last.fm key on Connections to look up its soundalikes"
+            msg = f"{a.name} is now a seed (moved up to Seeds). Add a Last.fm key on Connections to look up its soundalikes"
     elif decision == "restore":
         a.active = True
         a.review = "accepted"
@@ -81,7 +83,10 @@ def review(request: Request, aid: int, decision: str = Form(...), user: User = D
     else:
         sa.reject(session, a)
         msg = f"{a.name} excluded"
-    return back("/seeds", msg)
+    resp = back("/seeds", msg)
+    # Land on the artist where it now is (a new seed moves to the top), highlighted.
+    resp.headers["location"] += f"#artist-{a.id}"
+    return resp
 
 
 @router.post("/artists/{aid}/prune")

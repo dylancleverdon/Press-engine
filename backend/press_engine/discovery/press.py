@@ -82,6 +82,10 @@ def run_press_discovery(
             if budget <= 0 or (target and stats["new_people"] >= target):
                 break
             budget -= 1
+            from .. import progress
+
+            progress.step(f"Press: searching for {artist.name} ({stats['searches'] + 1})", engine="press",
+                          done=stats["pages_fetched"], total=settings.max_pages_per_run)
             run = SearchRun(engine="press", provider=svc.search.name, query=query, artist_id=artist.id, run_at=now)
             try:
                 results = svc.search.search(query, count=10, freshness=settings.search_freshness, lang=lang)

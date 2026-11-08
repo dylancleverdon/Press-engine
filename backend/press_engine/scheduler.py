@@ -61,6 +61,7 @@ class Scheduler:
             log.info("building today's queue")
             run_job(self.db, self.svc, "queue", now=now)
         self.update_tick(self.clock(), settings)
+        self.restart_tick(self.clock(), settings)
 
     def update_tick(self, now: datetime, settings) -> None:
         """Mac app only: look for a new release every few hours and install it."""
@@ -79,8 +80,21 @@ class Scheduler:
             with self.db.session() as s:
                 s.add(JobRun(job="update", started_at=now, finished_at=self.clock(), ok=not state.get("error"),
                              stats={"installed": state.get("installed"), "latest": state.get("latest")}, error=state.get("error")))
-        if state.get("installed"):
-            runtime.request_restart(f"update to {state['installed']}", delay=0)
+        # The restart itself waits for the banner's countdown (restart_tick).
+
+    def restart_tick(self, now: datetime, settings) -> None:
+        """Restart into an installed update once its countdown is over and nothing's running."""
+        from . import progress
+        from .api import views
+
+        cfg = self.svc.cfg
+        if not cfg.desktop:
+            return
+        busy = bool(views.running_jobs()) or bool(progress.current())
+        local_hour = to_local(now, get_tz(settings.timezone)).hour
+        if updater.restart_due(cfg, now, busy=busy, local_hour=local_hour):
+            state = updater.read_state(cfg)
+            runtime.request_restart(f"update to {state.get('installed')}", delay=0)
 
     def quiesce(self) -> None:
         """Wait for an email that's being sent right now, then start no new work."""
