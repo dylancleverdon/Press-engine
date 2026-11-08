@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -115,18 +115,40 @@ def suggestions(request: Request, user: User = Depends(web_user), session: Sessi
                 sheet_ready=svc.sheets() is not None)
 
 
+async def read_images(files: list[UploadFile]) -> list[tuple[str, bytes, str]]:
+    out = []
+    for f in files[: sg.MAX_IMAGES]:
+        if f is None or not getattr(f, "filename", None):
+            continue
+        data = await f.read(sg.MAX_IMAGE_BYTES + 1)
+        out.append((f.filename, data, f.content_type or ""))
+    return out
+
+
 @router.post("/suggestions")
-def suggest(request: Request, text: str = Form(...), area: str = Form(""), user: User = Depends(web_user),
-            session: Session = Depends(get_db), svc=Depends(get_svc)):
+async def suggest(request: Request, text: str = Form(...), area: str = Form(""), images: list[UploadFile] = File(default=[]),
+                  user: User = Depends(web_user), session: Session = Depends(get_db), svc=Depends(get_svc)):
     _, back = _page()
     if not text.strip():
         return back("/suggestions", "Write the suggestion first")
-    sg.submit(session, user, text, area)
+    sg.submit(session, user, text, area, images=await read_images(images), image_dir=sg.image_dir_for(svc.cfg))
     session.commit()
     if svc.sheets() is not None:
         views.run_in_background(request.app.state.db, svc, "sheet_sync")
         return back("/suggestions", "Thanks! Added to the suggestions sheet.")
     return back("/suggestions", "Thanks! Saved. It goes to the Google Sheet once Google is connected with Sheets access.")
+
+
+@router.get("/suggestions/{sid}/images/{n}")
+def suggestion_image(sid: int, n: int, user: User = Depends(web_user), session: Session = Depends(get_db), svc=Depends(get_svc)):
+    s = session.get(Suggestion, sid)
+    images = (s.images or []) if s else []
+    if not 1 <= n <= len(images):
+        raise HTTPException(404)
+    path = sg.image_dir_for(svc.cfg) / images[n - 1]["file"]
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type=images[n - 1].get("type") or None)
 
 
 @router.post("/suggestions/{sid}")

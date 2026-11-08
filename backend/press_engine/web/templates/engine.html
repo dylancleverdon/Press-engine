@@ -3,10 +3,14 @@
 {% block title %}{{ engine.label }} · Discovery · Press Engine{% endblock %}
 {% block content %}
 <div class="row"><h1 class="grow">{{ engine.label }}
-  {% if connected[0] %}<span class="chip ok">{{ connected[1] }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h1>
+  {% if engine.coming_soon %}<span class="chip warn">coming soon</span>{% elif connected[0] %}<span class="chip ok">{{ connected[1] }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h1>
   {% if user.is_owner and engine.runnable %}<form method="post" action="/discovery/{{ engine.key }}/run" class="inline">
     <button class="primary" {{ 'disabled' if running or not connected[0] }}>Run {{ engine.label }} now</button></form>{% endif %}</div>
-<p class="muted">{{ engine.blurb }}{% if not connected[0] %} <b class="warn">{{ connected[1] }}.</b>{% endif %}</p>
+<p class="muted">{{ engine.blurb }}{% if not connected[0] and not engine.coming_soon %} <b class="warn">{{ connected[1] }}.</b>{% endif %}</p>
+{% if engine.coming_soon %}
+<div class="panel"><h3>Coming soon</h3><p>{{ engine.coming_soon }}</p>
+  <p class="small muted">Until then, Twitch links found on other creators' channels and link pages are already saved on their contacts.</p></div>
+{% else %}
 {% if running %}
 <div class="flash">Discovery is running… this page refreshes by itself when it's done.</div>
 <script>
@@ -46,6 +50,7 @@
       <tr>
         <td>{% if user.is_owner %}<input type="checkbox" name="ids" value="{{ p.id }}">{% endif %}</td>
         <td><a href="/contacts/{{ p.id }}">{{ p.name }}</a>
+          {% if merged_channels(p) > 1 %}<span class="chip warn" title="Separate channels were probably merged by mistake">{{ merged_channels(p) }} channels</span>{% endif %}
           <div class="small muted">{% if p.followers %}{{ "{:,}".format(p.followers) }} followers{% endif %}{% if p.country %} · {{ p.country }}{% endif %}</div>
           {% for i in p.identities if i.type not in ("email", "site") %}{% set link = profile_url(i.type, i.value) %}{% if link and loop.index <= 3 %}
             <a class="small" href="{{ link }}" target="_blank" rel="noopener">{{ i.type }}</a>{% endif %}{% endfor %}</td>
@@ -57,6 +62,7 @@
         <td>{% if user.is_owner %}<div class="row" style="flex-wrap:nowrap">
           {% if show != "approved" %}<button class="primary" name="decision" value="approve" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Approve</button>{% endif %}
           {% if show != "rejected" %}<button class="danger" name="decision" value="reject" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Reject</button>{% endif %}
+          <a class="button" href="/contacts/{{ p.id }}/report?next=/discovery/{{ engine.key }}%3Fshow%3D{{ show }}" title="Something wrong with this find? Describe it and the details go to the suggestions sheet">Report</a>
           {% if show != "pending" and show != "approved" %}<button name="decision" value="pending" formaction="/discovery/{{ engine.key }}/vet?one={{ p.id }}">Back to review</button>{% endif %}
         </div>{% endif %}</td>
       </tr>
@@ -87,10 +93,18 @@
     <button class="primary" style="margin-top:10px">Save</button>
   </form>
   {% endif %}
+  {% if engine.key == "youtube" and user.is_owner %}
+  <form method="post" action="/discovery/youtube/recheck" class="panel"
+        data-confirm="Re-check everything waiting to be vetted with the current rules? Videos that don't count are removed, and finds with nothing left move to Rejected (you can move them back).">
+    <h3>Clean up finds waiting to be vetted</h3>
+    <p class="small muted">Applies the rules above to what's already here: drops videos that don't name the artist or match the skip list, and rejects channels with nothing left.</p>
+    <button>Re-check finds</button></form>
+  {% endif %}
   {% if engine.key == "captures" %}
   <div class="panel small"><h3>Adding Instagram creators</h3>
     <p>Open a profile in Chrome and click <b>Save to CRM</b> in the extension, or share the profile to Press Engine from your phone. It lands here to vet.</p></div>
   {% endif %}
 </div>
 </div>
+{% endif %}
 {% endblock %}

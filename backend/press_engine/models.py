@@ -54,6 +54,7 @@ class IdentityType(StrEnum):
     FACEBOOK = "facebook"
     SOUNDCLOUD = "soundcloud"
     SPOTIFY = "spotify"
+    TWITCH = "twitch"
     SITE = "site"
     LINKINBIO = "linkinbio"
     OTHER = "other"
@@ -497,6 +498,10 @@ class Suggestion(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime)  # None = not in the sheet yet / local edits pending
     dirty: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Filled in automatically by "Report a problem" (everything needed to look into it).
+    details: Mapped[str | None] = mapped_column(Text)
+    # Attached screenshots: [{"file": stored name, "name": original name, "drive_url": link once uploaded}]
+    images: Mapped[list | None] = mapped_column(JSON)
 
     submitted_by: Mapped[User | None] = relationship()
 

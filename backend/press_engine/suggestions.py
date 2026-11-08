@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from datetime import datetime
 
 from sqlalchemy import select
@@ -25,19 +26,72 @@ from .util.timeutil import utcnow
 log = logging.getLogger(__name__)
 
 TAB = "Suggestions"
-HEADER = ["ID", "Submitted", "From", "Area", "Suggestion", "Status", "Notes", "Adjustments", "Updated"]
+HEADER = ["ID", "Submitted", "From", "Area", "Suggestion", "Status", "Notes", "Adjustments", "Updated", "Details", "Images"]
+LAST_COL = "K"
+DRIVE_FOLDER = "Press Engine suggestions"
+IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "image/heic": ".heic"}
+MAX_IMAGES = 6
+MAX_IMAGE_BYTES = 15 * 1024 * 1024
 STATUSES = ["new", "accepted", "in progress", "shipped", "rejected", "needs info", "duplicate"]
-AREAS = ["Soundalikes", "Finding press", "Creators", "Pitching", "Replies", "Mac app", "Phone app", "Chrome extension", "Other"]
+AREAS = ["Discovery report", "Soundalikes", "Finding press", "Creators", "Pitching", "Replies", "Mac app", "Phone app", "Chrome extension", "Other"]
 SOUNDALIKE_TAB = "Soundalikes"
 SOUNDALIKE_HEADER = ["Artist", "Kind", "Review", "Similarity", "Contacts found", "Pitched", "Replied", "Reply rate",
                      "Covered", "Fit", "Why", "Updated"]
 
 
-def submit(session: Session, user: User | None, text: str, area: str | None = None) -> Suggestion:
-    s = Suggestion(text=text.strip(), area=(area or None), submitted_by_user_id=user.id if user else None, dirty=True)
+def submit(session: Session, user: User | None, text: str, area: str | None = None, *, details: str | None = None,
+           images: list[tuple[str, bytes, str]] | None = None, image_dir: Path | None = None) -> Suggestion:
+    """images: (original file name, bytes, content type), stored under image_dir."""
+    s = Suggestion(text=text.strip(), area=(area or None), submitted_by_user_id=user.id if user else None, dirty=True,
+                   details=details)
     session.add(s)
     session.flush()
+    if images and image_dir is not None:
+        add_images(s, images, image_dir)
     return s
+
+
+def image_dir_for(cfg) -> Path:
+    return Path(cfg.data_dir) / "suggestion_images"
+
+
+def add_images(s: Suggestion, images: list[tuple[str, bytes, str]], image_dir: Path) -> int:
+    """Keep the screenshots that are real images of a sane size. Returns how many were kept."""
+    image_dir.mkdir(parents=True, exist_ok=True)
+    kept = list(s.images or [])
+    for name, data, ctype in images:
+        ext = IMAGE_TYPES.get((ctype or "").split(";")[0].strip().lower())
+        if not ext or not data or len(data) > MAX_IMAGE_BYTES or len(kept) >= MAX_IMAGES:
+            continue
+        stored = f"{s.id}_{len(kept) + 1}{ext}"
+        (image_dir / stored).write_bytes(data)
+        kept.append({"file": stored, "name": (name or stored)[:120], "type": ctype, "drive_url": None})
+    added = len(kept) - len(s.images or [])
+    s.images = kept
+    return added
+
+
+def upload_images(session: Session, drive, image_dir: Path) -> int:
+    """Put screenshots not yet in Drive into the "Press Engine suggestions" folder."""
+    todo = [s for s in session.scalars(select(Suggestion).where(Suggestion.images.is_not(None)))
+            if any(not im.get("drive_url") for im in s.images or [])]
+    if not todo:
+        return 0
+    folder = drive.folder(DRIVE_FOLDER)
+    n = 0
+    for s in todo:
+        images = [dict(im) for im in s.images]
+        for im in images:
+            path = image_dir / im["file"]
+            if im.get("drive_url") or not path.exists():
+                continue
+            im["drive_url"] = drive.upload(folder, f"Suggestion {s.id} - {im['name']}", path.read_bytes(),
+                                           im.get("type") or "image/png")
+            n += 1
+        s.images = images  # reassign so the JSON change is saved
+        s.dirty = True
+    session.flush()
+    return n
 
 
 def edit(session: Session, s: Suggestion, *, status: str | None = None, notes: str | None = None,
@@ -53,9 +107,14 @@ def edit(session: Session, s: Suggestion, *, status: str | None = None, notes: s
     session.flush()
 
 
+def _images_cell(s: Suggestion) -> str:
+    return "\n".join(im.get("drive_url") or f"{im['name']} (in the app)" for im in s.images or [])
+
+
 def _row(s: Suggestion) -> list[str]:
     return [str(s.id), s.created_at.strftime("%Y-%m-%d %H:%M"), s.submitted_by.name if s.submitted_by else "",
-            s.area or "", s.text, s.status, s.notes or "", s.adjustments or "", s.updated_at.strftime("%Y-%m-%d %H:%M")]
+            s.area or "", s.text, s.status, s.notes or "", s.adjustments or "", s.updated_at.strftime("%Y-%m-%d %H:%M"),
+            (s.details or "")[:45000], _images_cell(s)]
 
 
 def _cell(row: list[str], i: int) -> str:
@@ -72,8 +131,14 @@ def sync(session: Session, svc, settings: AppSettings, *, now: datetime | None =
         return {"skipped": "Google isn't connected with access to Sheets (reconnect on the Connections page)"}
     stats = {"pushed": 0, "updated_in_sheet": 0, "pulled": 0, "imported": 0}
     try:
+        drive = svc.drive()
+        if drive is not None:
+            stats["images_uploaded"] = upload_images(session, drive, image_dir_for(svc.cfg))
         client.ensure_tab(sid, TAB, HEADER, dropdown=(HEADER.index("Status"), STATUSES))
-        rows = client.get(sid, f"{TAB}!A2:I")
+        rows = client.get(sid, f"{TAB}!A1:{LAST_COL}")
+        if not rows or rows[0][:len(HEADER)] != HEADER:  # older sheets lack the newer columns
+            client.update(sid, f"{TAB}!A1:{LAST_COL}1", [HEADER])
+        rows = rows[1:]
         by_id: dict[str, tuple[int, list[str]]] = {}
         new_rows: list[tuple[int, list[str]]] = []
         for i, row in enumerate(rows):
@@ -89,12 +154,12 @@ def sync(session: Session, svc, settings: AppSettings, *, now: datetime | None =
         for s in session.scalars(select(Suggestion).order_by(Suggestion.id)):
             found = by_id.get(str(s.id))
             if found is None:
-                client.append(sid, f"{TAB}!A:I", [_row(s)])
+                client.append(sid, f"{TAB}!A:{LAST_COL}", [_row(s)])
                 stats["pushed"] += 1
             else:
                 rownum, row = found
                 if s.dirty:
-                    client.update(sid, f"{TAB}!A{rownum}:I{rownum}", [_row(s)])
+                    client.update(sid, f"{TAB}!A{rownum}:{LAST_COL}{rownum}", [_row(s)])
                     stats["updated_in_sheet"] += 1
                 else:
                     status, notes, adj, text = _cell(row, 5) or "new", _cell(row, 6) or None, _cell(row, 7) or None, _cell(row, 4)
@@ -111,7 +176,7 @@ def sync(session: Session, svc, settings: AppSettings, *, now: datetime | None =
                            notes=_cell(row, 6) or None, adjustments=_cell(row, 7) or None, dirty=False, synced_at=now)
             session.add(s)
             session.flush()
-            client.update(sid, f"{TAB}!A{rownum}:I{rownum}", [_row(s)[:2] + [_cell(row, 2) or "sheet"] + _row(s)[3:]])
+            client.update(sid, f"{TAB}!A{rownum}:{LAST_COL}{rownum}", [_row(s)[:2] + [_cell(row, 2) or "sheet"] + _row(s)[3:]])
             stats["imported"] += 1
 
         stats["soundalikes"] = write_soundalike_report(client, sid, session, now)

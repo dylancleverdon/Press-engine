@@ -7,6 +7,7 @@
     {% if p.vetting == "pending" %}<span class="chip warn">waiting to be vetted (Discovery)</span>{% elif p.vetting == "rejected" %}<span class="chip bad">rejected in Discovery</span>{% endif %}
     {% if p.needs_review %}<span class="chip warn">needs review</span>{% endif %}</h1>
   <span class="chip">taste {{ p.taste_score|pct }}</span>
+  <a class="button" href="/contacts/{{ p.id }}/report">Report a problem</a>
 </div>
 {% if p.review_reason %}<div class="flash warn">{{ p.review_reason }}
   {% if user.is_owner %}<form method="post" action="/contacts/{{ p.id }}/reviewed" class="inline"><button>Mark reviewed</button></form>{% endif %}</div>{% endif %}

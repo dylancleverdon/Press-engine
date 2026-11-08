@@ -15,9 +15,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/spreadsheets",  # suggestions box sheet
     "https://www.googleapis.com/auth/youtube.readonly",  # creator discovery, read-only
+    "https://www.googleapis.com/auth/drive.file",  # suggestion screenshots (only files this app creates)
 ]
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 
 
 class GoogleAuthError(RuntimeError):

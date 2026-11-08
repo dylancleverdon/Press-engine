@@ -17,7 +17,7 @@ from ..models import Page
 from ..util.emails import find_emails
 from ..util.text import truncate
 from ..util.timeutil import utcnow
-from ..util.urls import absolutize, host_of, normalize_url, parse_social
+from ..util.urls import absolutize, host_of, is_link_in_bio, normalize_url, parse_social
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ CONTACT_RE = re.compile(
 )
 MAX_TEXT = 60_000
 MAX_LINKS = 150
+EMBEDDED_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+")
+STATIC_ASSET_RE = re.compile(r"\.(?:js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|json|mp4|m3u8)$", re.I)
 LANG_RE = re.compile(r"^[a-z]{2,3}")
 
 
@@ -123,6 +125,19 @@ def parse_html(html: str, url: str) -> dict:
             links[href] = {"href": href, "text": text_a, "kind": "contact"}
         if len(links) >= MAX_LINKS:
             break
+
+    if is_link_in_bio(url):
+        # Linktree, Beacons and co. often build the page with JavaScript; the links
+        # are still in the page's embedded JSON.
+        for raw in EMBEDDED_URL_RE.findall(html.replace("\\/", "/").replace("\\u002F", "/")):
+            href = raw.rstrip("\\.,;")
+            if href in links or len(links) >= MAX_LINKS or host_of(href) == host_of(url):
+                continue
+            social = parse_social(href)
+            if social:
+                links[href] = {"href": href, "text": "", "kind": "social", "type": social.type, "value": social.value}
+            elif not STATIC_ASSET_RE.search(href.split("?", 1)[0]):
+                links[href] = {"href": href, "text": "", "kind": "other"}
 
     found = find_emails(html, text)
     return {

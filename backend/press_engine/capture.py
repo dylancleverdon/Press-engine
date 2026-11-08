@@ -114,7 +114,7 @@ def capture(session: Session, http: httpx.Client, user: User, data: CaptureIn, *
         session.flush()
 
     if data.bio_link:
-        person = add_link(session, person, data.bio_link, source_url=url)
+        person = add_link(session, person, data.bio_link, source_url=url, merge=True)  # their own bio link
     if data.bio:
         person = ingest_profile_text(session, person, data.bio, source_url=url)
     if data.email and EMAIL_RE.fullmatch(data.email.strip()):

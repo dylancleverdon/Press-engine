@@ -54,6 +54,16 @@ class Services:
 
         return SheetsClient(self.google.access_token, self.http)
 
+    def drive(self):
+        """Google Drive (only files this app creates), or None without that permission."""
+        from .outreach.google_auth import DRIVE_SCOPE
+
+        if self.google is None or not self.google.connected() or not self.google.has_scope(DRIVE_SCOPE):
+            return None
+        from .sheets import DriveClient
+
+        return DriveClient(self.google.access_token, self.http)
+
     def youtube_client(self):
         """YouTube via the API key if one is set, else via the Google sign-in (youtube.readonly)."""
         if self.youtube is not None:

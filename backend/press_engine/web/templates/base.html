@@ -10,6 +10,13 @@
     // ⌘R / Ctrl+R / F5 reload the page (the Mac app's window has no reload button of its own).
     document.addEventListener("keydown", (e) => {
       if (e.key === "F5" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r")) { e.preventDefault(); location.reload(); }
+      // ⌘[ / Alt+← go back, as in Safari (the Mac app's window has no back button of its own).
+      if (((e.metaKey || e.ctrlKey) && e.key === "[") || (e.altKey && e.key === "ArrowLeft")) { e.preventDefault(); history.back(); }
+    });
+    // Show the back button once there's somewhere to go back to in this window.
+    document.addEventListener("DOMContentLoaded", () => {
+      const b = document.getElementById("back");
+      if (b && history.length > 1) b.hidden = false;
     });
   </script>
   {% if desktop %}<script>
@@ -24,6 +31,7 @@
 <body>
 <header>
   <nav>
+    <button type="button" class="icon-button back" id="back" onclick="history.back()" title="Back (⌘[)" aria-label="Go back" hidden>←</button>
     <span class="brand">Press Engine</span>
     {% set path = request.url.path %}
     {% set owner = user.is_owner %}

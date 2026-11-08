@@ -79,6 +79,8 @@ _RESERVED = {
     "facebook": {"sharer", "sharer.php", "share", "dialog", "plugins", "tr", "groups", "events", "watch", "login", "pages", "profile.php"},
     "tiktok": {"discover", "tag", "music", "foryou", "explore", "live", "login", "upload"},
     "soundcloud": {"discover", "search", "upload", "stream", "you", "pages", "terms-of-use"},
+    "twitch": {"directory", "videos", "search", "settings", "downloads", "jobs", "p", "turbo", "subscriptions",
+               "inventory", "wallet", "drops", "login", "signup", "store", "prime", "friends", "messages"},
 }
 
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -125,6 +127,11 @@ def parse_social(url: str) -> SocialRef | None:
             v = f"{segs[0]}/{unquote(segs[1]).lower()}"
             return SocialRef("youtube", v, segs[1], f"https://www.youtube.com/{v}")
         return None
+    if host in ("twitch.tv", "m.twitch.tv"):
+        if seg and seg.lower() not in _RESERVED["twitch"] and HANDLE_RE.match(seg):
+            h = seg.lower()
+            return SocialRef("twitch", h, seg, f"https://www.twitch.tv/{h}")
+        return None
     if host in ("twitter.com", "x.com"):
         if seg and seg.lower() not in _RESERVED["x"] and HANDLE_RE.match(seg):
             h = seg.lower()
@@ -168,6 +175,12 @@ def parse_social(url: str) -> SocialRef | None:
     return None
 
 
+def is_link_in_bio(url: str) -> bool:
+    """A Linktree-style page listing someone's links."""
+    ref = parse_social(url)
+    return ref is not None and ref.type == "linkinbio"
+
+
 def is_social_or_platform_host(host: str) -> bool:
     host = host.lower()
     platforms = {
@@ -192,7 +205,7 @@ PROFILE_URLS = {
     "tiktok": "https://www.tiktok.com/@{v}", "instagram": "https://www.instagram.com/{v}/", "x": "https://x.com/{v}",
     "bluesky": "https://bsky.app/profile/{v}", "threads": "https://www.threads.net/@{v}",
     "facebook": "https://www.facebook.com/{v}", "soundcloud": "https://soundcloud.com/{v}",
-    "spotify": "https://open.spotify.com/user/{v}", "linkinbio": "https://{v}", "site": "https://{v}/",
+    "spotify": "https://open.spotify.com/user/{v}", "twitch": "https://www.twitch.tv/{v}", "linkinbio": "https://{v}", "site": "https://{v}/",
 }
 
 

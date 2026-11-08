@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ from ..contacts.creators import ingest_profile_text, upsert_creator
 from ..contacts.ingest import add_coverage, add_identity
 from ..discovery.extract import parse_date
 from ..models import PersonKind, SearchRun
-from ..util.text import fold, name_key
+from ..util.text import contains_phrase, fold, name_key
 from ..util.timeutil import utcnow
 from ..util.urls import SocialRef
 from .known import KnownArtists
@@ -26,7 +27,31 @@ log = logging.getLogger(__name__)
 
 API = "https://www.googleapis.com/youtube/v3"
 MIN_SUBSCRIBERS = 100
-PLAN = [("{artist} review", "video"), ("{artist} reaction", "video"), ("{artist} mix", "video"), ("{artist}", "playlist")]
+PLAN = [("{artist} review", "video"), ("{artist} reaction", "video"), ("{artist} album review", "video"),
+        ("{artist} mix", "video"), ("{artist}", "playlist")]
+
+
+def skip_reason(title: str, description: str, artist: str, settings: AppSettings) -> str | None:
+    """Why a search hit doesn't count as this channel covering the artist, or None.
+
+    YouTube search also returns loosely related videos, so the artist has to be named
+    in the title or description; and concert recordings, type beats, lyric re-uploads
+    and the like are skipped (their channels aren't people to pitch)."""
+    if not (contains_phrase(title, artist) or contains_phrase(description, artist)):
+        return "doesn't mention the artist"
+    if settings.youtube_skip_videos:
+        t = f" {fold(title)} "
+        raw = (title or "").lower()
+        for word in settings.youtube_skip_words:
+            w = word.strip().lower()
+            if not w:
+                continue
+            # Entries with punctuation, like "(live)" or "- live", match as typed;
+            # plain words match whole words only ("live in" doesn't hit "olive inn").
+            hit = (w in raw) if re.search(r"[^\w\s]", w) else (f" {fold(w)} " in t)
+            if hit:
+                return f'title has "{word.strip()}"'
+    return None
 
 
 class YouTubeError(RuntimeError):
@@ -130,8 +155,13 @@ def run_youtube_discovery(session: Session, svc, settings: AppSettings, *, now: 
                 snip = item.get("snippet") or {}
                 ch = snip.get("channelId")
                 link = _item_url(item)
-                if ch and link and not is_official(snip.get("channelTitle", ""), artist_keys):
-                    hits[ch].append((artist.name, snip, *link))
+                if not (ch and link) or is_official(snip.get("channelTitle", ""), artist_keys):
+                    continue
+                why = skip_reason(snip.get("title", ""), snip.get("description", ""), artist.name, settings)
+                if why:
+                    stats["skipped_videos"] += 1
+                    continue
+                hits[ch].append((artist.name, snip, *link))
         artist.last_youtube_search_at = now
         session.commit()
 

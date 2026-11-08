@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -26,6 +26,8 @@ def _engine(key: str) -> eng.Engine:
 
 def _connected(svc, e: eng.Engine) -> tuple[bool, str]:
     """Whether the engine can run, and what it uses (or what's missing)."""
+    if e.coming_soon:
+        return False, "Coming soon"
     if e.key == "youtube":
         yt = svc.youtube_client()
         return (True, f"via {yt.via}") if yt else (False, "Connect Google with YouTube access on Connections")
@@ -75,7 +77,7 @@ def engine_page(request: Request, key: str, show: str | None = None, user: User 
     searches = eng.recent_searches(session, e)
     return page(request, "engine.html", user, session, settings=settings, engine=e, fields=fields, rows=rows, show=show,
                 counts=eng.counts(session, e), connected=_connected(svc, e), searches=searches,
-                artist_names=artist_names, contact_line=views.contact_line,
+                artist_names=artist_names, contact_line=views.contact_line, merged_channels=eng.merged_channels,
                 running="discover" in views.running_jobs())
 
 
@@ -93,6 +95,15 @@ def engine_run(request: Request, key: str, user: User = Depends(web_owner), svc=
     return back(f"/discovery/{key}", f"Running the {e.label} engine. This page refreshes when it's done.")
 
 
+@router.post("/discovery/youtube/recheck")
+def youtube_recheck(user: User = Depends(web_owner), session: Session = Depends(get_db)):
+    from .routes_web import back
+
+    st = eng.recheck_youtube(session, load_settings(session))
+    return back("/discovery/youtube", f"Checked {st['checked']} finds: dropped {st['videos_dropped']} videos that don't count, "
+                f"moved {st['rejected']} with nothing left to Rejected, flagged {st['merged_flagged']} that hold several channels.")
+
+
 @router.post("/discovery/{key}/settings")
 async def engine_settings(request: Request, key: str, user: User = Depends(web_owner), session: Session = Depends(get_db)):
     from .routes_web import apply_settings_form, back
@@ -108,6 +119,42 @@ async def engine_settings(request: Request, key: str, user: User = Depends(web_o
         errors = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in err.errors())
         return back(f"/discovery/{key}", f"Not saved - {errors}")
     return back(f"/discovery/{key}", f"{e.label} settings saved")
+
+
+@router.get("/contacts/{pid}/report", response_class=HTMLResponse)
+def report_form(request: Request, pid: int, next: str = "", user: User = Depends(web_user), session: Session = Depends(get_db)):
+    from ..reports import discovery_report
+    from .routes_web import page
+
+    person = session.get(Person, pid)
+    if person is None:
+        raise HTTPException(404)
+    return page(request, "report.html", user, session, p=person, details=discovery_report(session, person),
+                next=next if next.startswith("/") else f"/contacts/{pid}")
+
+
+@router.post("/contacts/{pid}/report")
+async def report_send(request: Request, pid: int, text: str = Form(...), next: str = Form(""),
+                      images: list[UploadFile] = File(default=[]), user: User = Depends(web_user),
+                      session: Session = Depends(get_db), svc=Depends(get_svc)):
+    from .. import suggestions as sg
+    from ..reports import discovery_report
+    from .routes_soundalikes import read_images
+    from .routes_web import back
+
+    person = session.get(Person, pid)
+    if person is None:
+        raise HTTPException(404)
+    dest = next if next.startswith("/") else f"/contacts/{pid}"
+    if not text.strip():
+        return back(f"/contacts/{pid}/report?next={dest}", "Say what's wrong first")
+    s = sg.submit(session, user, f"{text.strip()}\n\n(Report on contact #{person.id}: {person.name})", "Discovery report",
+                  details=discovery_report(session, person), images=await read_images(images),
+                  image_dir=sg.image_dir_for(svc.cfg))
+    session.commit()
+    if svc.sheets() is not None:
+        views.run_in_background(request.app.state.db, svc, "sheet_sync")
+    return back(dest, f"Thanks! Reported as suggestion #{s.id}, with everything about {person.name} attached.")
 
 
 @router.post("/discovery/{key}/vet")

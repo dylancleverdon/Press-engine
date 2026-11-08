@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Report a problem · Press Engine{% endblock %}
+{% block content %}
+<h1>Report a problem with {{ p.name }}</h1>
+<form method="post" action="/contacts/{{ p.id }}/report" enctype="multipart/form-data" class="panel">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="text">What's wrong?</label>
+  <textarea id="text" name="text" required autofocus data-paste-images="images"
+            placeholder="e.g. Neither of these videos is theirs, and that email isn't theirs either"></textarea>
+  <label for="images">Screenshots (optional; you can also paste them into the box above)</label>
+  <input id="images" type="file" name="images" accept="image/*" multiple>
+  <div class="row" style="margin-top:10px"><button class="primary">Send report</button><a href="{{ next }}">Cancel</a></div>
+  <p class="small muted">This goes to the suggestions sheet as a "Discovery report", with everything below attached automatically.</p>
+</form>
+<details class="panel"><summary>What gets attached</summary><pre class="code small pre-wrap">{{ details }}</pre></details>
+{% endblock %}

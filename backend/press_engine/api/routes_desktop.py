@@ -144,13 +144,14 @@ def connections(request: Request, user: User = Depends(web_owner), session: Sess
     if desktop and desktop.get("host") == "0.0.0.0":
         addresses += [f"http://{ip}:{port}" for ip in runtime.lan_addresses()]
     google = svc.google
-    from ..outreach.google_auth import SHEETS_SCOPE, YOUTUBE_SCOPE
+    from ..outreach.google_auth import DRIVE_SCOPE, SHEETS_SCOPE, YOUTUBE_SCOPE
     from ..sheets import sheet_id_from
 
     sid = sheet_id_from(load_settings(session).suggestions_sheet_id or "")
     return page(request, "connections.html", user, session, groups=groups, sources=sources,
                 sheets_scope=bool(google and google.has_scope(SHEETS_SCOPE)),
                 youtube_scope=bool(google and google.has_scope(YOUTUBE_SCOPE)),
+                drive_scope=bool(google and google.has_scope(DRIVE_SCOPE)),
                 sheet_url=f"https://docs.google.com/spreadsheets/d/{sid}/edit" if sid else None,
                 google_connected=bool(google and google.connected()),
                 google_has_client=bool(google and google.client_secrets.exists()),

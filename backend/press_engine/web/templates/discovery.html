@@ -17,13 +17,13 @@
   </a>
   {% for c in cards %}{% set e = c.engine %}
   <a class="panel engine-card" href="/discovery/{{ e.key }}">
-    <h3>{{ e.label }} {% if c.connected[0] %}<span class="chip ok">{{ c.connected[1] if e.runnable else "manual" }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h3>
+    <h3>{{ e.label }} {% if e.coming_soon %}<span class="chip warn">coming soon</span>{% elif c.connected[0] %}<span class="chip ok">{{ c.connected[1] if e.runnable else "manual" }}</span>{% else %}<span class="chip">not connected</span>{% endif %}</h3>
     <p class="small muted">{{ e.blurb }}</p>
     <div class="row small"><span><b>{{ c.counts.approved }}</b> in Contacts</span>
       {% if c.counts.pending %}<span class="chip warn">{{ c.counts.pending }} to vet</span>{% endif %}
       {% if c.counts.rejected %}<span class="muted">{{ c.counts.rejected }} rejected</span>{% endif %}
       {% if e.runnable and e.auto_approve(settings) %}<span class="chip">auto-approve</span>{% endif %}</div>
-    {% if not c.connected[0] %}<p class="small warn" style="margin:6px 0 0">{{ c.connected[1] }}</p>{% endif %}
+    {% if not c.connected[0] and not e.coming_soon %}<p class="small warn" style="margin:6px 0 0">{{ c.connected[1] }}</p>{% endif %}
   </a>
   {% endfor %}
 </div>

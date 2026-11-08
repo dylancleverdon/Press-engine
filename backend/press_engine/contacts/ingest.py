@@ -63,9 +63,14 @@ def add_identity(
     display: str | None = None,
     source_url: str | None = None,
     verified: bool = False,
+    merge: bool = True,
 ) -> Person:
     """Attach an identity. If another person already owns it, the two are merged
-    (link following, spec §4.6). Returns the surviving person."""
+    (link following, spec §4.6). Returns the surviving person.
+
+    merge=False is for identities that are only *mentioned* by someone (links and
+    emails in a channel description or link page): creators link collaborators,
+    producers and other channels, so a clash goes to the Duplicates page instead."""
     if type_ == IdentityType.EMAIL:
         value = normalize_email(value)
     existing = find_identity(session, type_, value)
@@ -80,6 +85,10 @@ def add_identity(
             existing.source_url = source_url or existing.source_url
         return person
     other = existing.person
+    if not merge:
+        flag_possible_duplicate(session, min(other.id, person.id), max(other.id, person.id),
+                                f"{person.name} links to {display or value}, which belongs to {other.name}", 0.6)
+        return person
     keep, drop = (other, person) if other.id < person.id else (person, other)
     survivor = merge_people(session, keep, drop)
     if verified and not existing.verified:
@@ -140,12 +149,12 @@ def find_desk(outlet: Outlet) -> Person | None:
 
 
 def attach_email(session: Session, person: Person, outlet: Outlet | None, email: str, *, source_url: str,
-                 verified: bool = True, page_is_personal: bool = False) -> Person:
+                 verified: bool = True, page_is_personal: bool = False, merge: bool = True) -> Person:
     """Personal-looking address -> person identity; generic inbox -> outlet contact."""
     email = normalize_email(email)
     personal = (matches_name(email, person.name) or page_is_personal) and not is_generic(email)
     if personal:
-        return add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=verified)
+        return add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=verified, merge=merge)
     if page_is_personal and outlet is None:
         # A creator's own "hello@ / booking@" inbox. It's theirs, but agencies share
         # such inboxes, so a clash is flagged for review instead of auto-merging.

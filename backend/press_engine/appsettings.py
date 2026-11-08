@@ -79,6 +79,14 @@ DEFAULT_BLOCKED_DOMAINS = [
     "linktr.ee", "setlist.fm", "imdb.com", "qobuz.com", "napster.com", "jpc.de", "cdon.com",
 ]
 
+# Videos whose titles say they're a concert recording, a type beat, a lyric re-upload
+# and so on: the people behind them aren't the ones to pitch.
+DEFAULT_YOUTUBE_SKIP_WORDS = [
+    "live at", "live in", "live from", "(live)", "[live]", "- live", "full concert", "full set", "full show",
+    "concert", "festival", "soundcheck", "front row", "4k live", "live session", "type beat", "free for profit",
+    "lyrics", "lyric video", "karaoke", "nightcore", "sped up", "slowed", "8d audio", "full album",
+]
+
 LANG_CODE = re.compile(r"^[a-z]{2,3}$")
 
 
@@ -126,6 +134,8 @@ class AppSettings(BaseModel):
     playlist_daily_searches: int = 10
     youtube_min_subscribers: int = 100
     youtube_max_subscribers: int = 0  # 0 = no upper limit
+    youtube_skip_videos: bool = True
+    youtube_skip_words: list[str] = Field(default_factory=lambda: list(DEFAULT_YOUTUBE_SKIP_WORDS))
     # Discovery vetting: auto-approve what each engine finds instead of waiting for review.
     press_auto_approve: bool = False
     youtube_auto_approve: bool = False

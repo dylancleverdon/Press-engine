@@ -7,9 +7,11 @@
 {% if not sheet_ready %}<div class="flash warn">Suggestions are saved here, but can't reach the Google Sheet yet.
   {% if user.is_owner %}Reconnect Google on <a href="/connections">Connections</a> to allow access to Sheets.{% endif %}</div>{% endif %}
 
-<form method="post" action="/suggestions" class="panel">
+<form method="post" action="/suggestions" class="panel" enctype="multipart/form-data">
   <label for="text">What should Press Engine do better?</label>
-  <textarea id="text" name="text" required placeholder="An idea, a bug, a band it should look at, anything"></textarea>
+  <textarea id="text" name="text" required placeholder="An idea, a bug, a band it should look at, anything" data-paste-images="images"></textarea>
+  <label for="images">Screenshots (optional; you can also paste them into the box above)</label>
+  <input id="images" type="file" name="images" accept="image/*" multiple style="margin-bottom:8px">
   <div class="row">
     <select name="area" style="width:auto"><option value="">Area (optional)</option>
       {% for a in areas %}<option>{{ a }}</option>{% endfor %}</select>
@@ -23,6 +25,9 @@
   <div class="row"><b class="grow pre-wrap">#{{ s.id }} {{ s.text }}</b><span class="chip {{ 'ok' if s.status in ('shipped', 'accepted') else 'bad' if s.status == 'rejected' }}">{{ s.status }}</span></div>
   <div class="small muted">{{ local(s.created_at, "%d %b %Y") }}{% if s.submitted_by %} · {{ s.submitted_by.name }}{% endif %}{% if s.area %} · {{ s.area }}{% endif %}
     · {{ "in the sheet" if s.synced_at and not s.dirty else "not synced yet" }}</div>
+  {% if s.images %}<div class="thumbs">{% for im in s.images %}
+    <a href="/suggestions/{{ s.id }}/images/{{ loop.index }}" target="_blank" rel="noopener"><img src="/suggestions/{{ s.id }}/images/{{ loop.index }}" alt="{{ im.name }}"></a>{% endfor %}</div>{% endif %}
+  {% if s.details %}<details class="small"><summary>Details attached to this report</summary><pre class="code pre-wrap">{{ s.details }}</pre></details>{% endif %}
   {% if user.is_owner %}
   <form method="post" action="/suggestions/{{ s.id }}" style="margin-top: 8px">
     <div class="row"><select name="status" style="width:auto">{% for st in statuses %}<option {{ 'selected' if st == s.status }}>{{ st }}</option>{% endfor %}</select></div>

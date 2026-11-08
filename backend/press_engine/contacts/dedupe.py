@@ -22,7 +22,7 @@ from ..util.timeutil import utcnow
 
 log = logging.getLogger(__name__)
 
-HANDLE_TYPES = ("tiktok", "instagram", "x", "youtube", "bluesky", "threads", "soundcloud", "facebook")
+HANDLE_TYPES = ("tiktok", "instagram", "x", "youtube", "bluesky", "threads", "soundcloud", "facebook", "twitch")
 
 
 def _join(a: str | None, b: str | None) -> str | None:

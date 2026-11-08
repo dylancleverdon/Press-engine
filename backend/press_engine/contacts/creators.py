@@ -49,20 +49,20 @@ def ingest_profile_text(session: Session, person: Person, text: str | None, *, s
         return person
     found = find_emails(None, text)
     for email in found.verbatim:
-        person = attach_email(session, person, None, email, source_url=source_url, page_is_personal=True)
+        person = attach_email(session, person, None, email, source_url=source_url, page_is_personal=True, merge=False)
     for email in found.unverified:
-        person = add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=False)
+        person = add_identity(session, person, IdentityType.EMAIL, email, source_url=source_url, verified=False, merge=False)
     for url in URL_RE.findall(text):
         url = url.rstrip(".,;:!?")
         person = add_link(session, person, url, source_url=source_url)
     return person
 
 
-def add_link(session: Session, person: Person, url: str, *, source_url: str | None) -> Person:
+def add_link(session: Session, person: Person, url: str, *, source_url: str | None, merge: bool = False) -> Person:
     ref = parse_social(url)
     if ref is not None:
-        return add_identity(session, person, ref.type, ref.value, display=ref.url, source_url=source_url)
+        return add_identity(session, person, ref.type, ref.value, display=ref.url, source_url=source_url, merge=merge)
     site = site_identity(url)
     if site is not None:
-        return add_identity(session, person, IdentityType.SITE, site.value, display=site.url, source_url=source_url)
+        return add_identity(session, person, IdentityType.SITE, site.value, display=site.url, source_url=source_url, merge=merge)
     return person

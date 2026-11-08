@@ -29,10 +29,11 @@ class Engine:
     search_engine: str | None = None  # SearchRun.engine
     runnable: bool = True  # has its own "Run now" (captures don't)
     settings: tuple[tuple[str, str], ...] = field(default_factory=tuple)  # (AppSettings field, label)
+    coming_soon: str | None = None  # placeholder engine: what it will do
 
     @property
     def auto_field(self) -> str | None:
-        return f"{self.key}_auto_approve" if self.runnable else None
+        return f"{self.key}_auto_approve" if self.runnable and not self.coming_soon else None
 
     def auto_approve(self, settings: AppSettings) -> bool:
         return bool(self.auto_field and getattr(settings, self.auto_field))
@@ -43,7 +44,9 @@ ENGINES: dict[str, Engine] = {e.key: e for e in [
            ("youtube",), "youtube",
            settings=(("youtube_daily_searches", "Searches per day (each uses 100 of the 10,000 free daily units)"),
                      ("youtube_min_subscribers", "Skip channels with fewer subscribers than"),
-                     ("youtube_max_subscribers", "Skip channels with more subscribers than (0 = no limit)"))),
+                     ("youtube_max_subscribers", "Skip channels with more subscribers than (0 = no limit)"),
+                     ("youtube_skip_videos", "Skip concert recordings, type beats, lyric videos and the like"),
+                     ("youtube_skip_words", "Skip videos whose titles contain (one per line)"))),
     Engine("tiktok", "TikTok", "Creators posting about your soundalikes, found through web search (TikTok itself is never scraped).",
            ("tiktok_search",), "tiktok",
            settings=(("tiktok_daily_searches", "Web searches per day"),)),
@@ -61,6 +64,13 @@ ENGINES: dict[str, Engine] = {e.key: e for e in [
     Engine("captures", "Instagram & captures", "Profiles you saved with the Chrome extension or the phone share sheet. "
            "Instagram can't be searched automatically, so this is how Instagram creators get in.",
            ("capture_extension", "capture_share", "capture_mobile", "capture_manual"), runnable=False),
+    Engine("twitch", "Twitch", "Streamers who play, react to or talk about music like yours.", ("twitch",), runnable=False,
+           coming_soon="Twitch can't be searched like YouTube: its search only matches channel names, and only "
+           "live streams have titles. The plan is to combine (1) checking who's live in the Music and "
+           "Just Chatting categories every couple of hours and keeping streams whose titles or tags mention "
+           "your soundalikes or genres, (2) web search for Twitch channels that mention your soundalikes, and "
+           "(3) Twitch links found on creators' YouTube channels and link pages, which Press Engine already "
+           "saves. It will need a free Twitch developer app (Client ID and Secret) on Connections."),
 ]}
 
 
@@ -126,3 +136,35 @@ def recent_searches(session: Session, engine: Engine, *, limit: int = 30) -> lis
         return []
     return list(session.scalars(select(SearchRun).where(SearchRun.engine == engine.search_engine)
                                 .order_by(SearchRun.run_at.desc(), SearchRun.id.desc()).limit(limit)))
+
+
+# --- YouTube clean-up -----------------------------------------------------------------------
+
+def merged_channels(person: Person) -> int:
+    """How many distinct YouTube channel IDs this contact holds (more than one usually
+    means separate channels were merged by mistake)."""
+    return sum(1 for i in person.identities if i.type == "youtube" and i.value.startswith("UC"))
+
+
+def recheck_youtube(session: Session, settings: AppSettings) -> dict:
+    """Apply the current video rules to YouTube finds still waiting to be vetted:
+    drop videos that don't count, and move finds with nothing left to Rejected."""
+    from .youtube import skip_reason
+
+    stats = {"checked": 0, "videos_dropped": 0, "rejected": 0, "merged_flagged": 0}
+    for p in people(session, ENGINES["youtube"], PENDING, limit=10_000):
+        stats["checked"] += 1
+        for c in list(p.coverage):
+            if c.source == "youtube" and skip_reason(c.title or "", c.summary or "", c.artist_name, settings):
+                session.delete(c)
+                p.coverage.remove(c)
+                stats["videos_dropped"] += 1
+        if not any(c.source == "youtube" for c in p.coverage):
+            p.vetting = REJECTED
+            stats["rejected"] += 1
+        elif merged_channels(p) > 1 and not p.needs_review:
+            p.needs_review = True
+            p.review_reason = "Holds several YouTube channels, probably merged by mistake. Check before approving."
+            stats["merged_flagged"] += 1
+    session.flush()
+    return stats

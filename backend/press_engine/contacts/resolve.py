@@ -96,9 +96,13 @@ def resolve_person(session: Session, svc, person: Person, *, now: datetime | Non
     queue = _candidates(session, person)
     fetched = 0
     while queue and fetched < max_fetches:
-        if verified_personal_email(person):
-            break
-        url, mode = queue.pop(0)
+        url, mode = queue[0]
+        if verified_personal_email(person) and mode != "bio":
+            # An email is enough for pitching, but link pages are still read in full:
+            # they list the creator's other profiles.
+            queue.pop(0)
+            continue
+        queue.pop(0)
         session.commit()  # don't hold SQLite's write lock across the network call
         page = fetch_page(session, svc.fetcher, url, max_age_days=30, now=now)
         fetched += 1
@@ -107,33 +111,36 @@ def resolve_person(session: Session, svc, person: Person, *, now: datetime | Non
         final = page.final_url or url
         outlet = next((o for o in person.outlets if host_of(final).endswith(o.domain)), None)
         personal_page = mode in ("author", "bio", "site")
+        # Link pages and personal sites also link collaborators, so anything there that
+        # belongs to someone else goes to Duplicates instead of merging.
+        merge = mode not in ("bio", "site", "site_contact")
         emails = page.emails or []
         non_generic = [e for e in emails if not is_generic(e)]
         for email in emails:
             if person.is_desk and mode == "contact" and len(non_generic) == 1 and email == non_generic[0]:
-                person = attach_email(session, person, outlet, email, source_url=final, page_is_personal=True)
+                person = attach_email(session, person, outlet, email, source_url=final, page_is_personal=True, merge=merge)
             else:
-                person = attach_email(session, person, outlet, email, source_url=final, page_is_personal=personal_page)
+                person = attach_email(session, person, outlet, email, source_url=final, page_is_personal=personal_page, merge=merge)
         for email in page.unverified_emails or []:
             if (personal_page or matches_name(email, person.name)) and not is_generic(email):
-                person = add_identity(session, person, IdentityType.EMAIL, email, source_url=final, verified=False)
+                person = add_identity(session, person, IdentityType.EMAIL, email, source_url=final, verified=False, merge=merge)
         if personal_page:
             outlet_domains = {o.domain for o in person.outlets}
             for link in page.links or []:
                 href = link["href"]
                 ref = parse_social(href) if link.get("kind") == "social" else None
                 if ref:
-                    person = add_identity(session, person, ref.type, ref.value, display=ref.display, source_url=final)
+                    person = add_identity(session, person, ref.type, ref.value, display=ref.display, source_url=final, merge=merge)
                 elif mode == "bio" and href.startswith("http"):
                     site = site_identity(href)
                     if site and site.value not in outlet_domains and not is_social_or_platform_host(host_of(href)):
-                        person = add_identity(session, person, IdentityType.SITE, site.value, display=site.url, source_url=final)
+                        person = add_identity(session, person, IdentityType.SITE, site.value, display=site.url, source_url=final, merge=False)
                         queue.append((site.url, "site"))
             if mode == "site":
                 queue += [(u, "site_contact") for u in _contact_links(page)[:1]]
         if mode == "site_contact":
             for email in emails:
-                person = attach_email(session, person, None, email, source_url=final, page_is_personal=not is_generic(email))
+                person = attach_email(session, person, None, email, source_url=final, page_is_personal=not is_generic(email), merge=False)
     person.resolved_at = now
     session.flush()
     return person
@@ -143,19 +150,25 @@ def resolve_pending(session: Session, svc, *, limit: int = 40, now: datetime | N
     """Resolve the best-scored people that still lack a verified email."""
     now = now or utcnow()
     stale = now - timedelta(days=recheck_days)
-    people = session.scalars(
-        select(Person)
-        .where(Person.opted_out.is_(False), (Person.resolved_at.is_(None)) | (Person.resolved_at < stale))
-        .order_by(Person.taste_score.desc(), Person.id)
-        .limit(limit * 3)
+    due = (Person.opted_out.is_(False), (Person.resolved_at.is_(None)) | (Person.resolved_at < stale))
+    # Anyone with a link-in-bio page that hasn't been read yet goes first (new finds
+    # waiting to be vetted included), then the best-scored rest.
+    with_bio = session.scalars(
+        select(Person).where(*due, Person.resolved_at.is_(None),
+                             Person.identities.any(Identity.type == IdentityType.LINKINBIO))
+        .order_by(Person.id.desc()).limit(limit)
     ).all()
+    people = list(with_bio) + [p for p in session.scalars(
+        select(Person).where(*due).order_by(Person.taste_score.desc(), Person.id).limit(limit * 3)
+    ).all() if p not in with_bio]
     stats = {"checked": 0, "found_email": 0}
     seen: set[int] = set()
     for person in people:
         if stats["checked"] >= limit:
             break
         state = sa_inspect(person)
-        if state.was_deleted or state.deleted or person.id in seen or verified_personal_email(person):
+        has_unread_bio = person.resolved_at is None and any(i.type == IdentityType.LINKINBIO for i in person.identities)
+        if state.was_deleted or state.deleted or person.id in seen or (verified_personal_email(person) and not has_unread_bio):
             continue  # merged away earlier in this batch, or already done
         try:
             person = resolve_person(session, svc, person, now=now)

@@ -332,3 +332,33 @@ def test_soundalike_made_seed_gets_tags_and_its_own_lookup(session, services, ro
     assert mh.is_seed and mh.expanded_at is None
     sa.discover_soundalikes(session, services, load_settings(session), now=NOW)
     assert mh.tags == ["jazz", "nu jazz"] and mh.expanded_at == NOW
+
+
+def test_suggestion_screenshots_go_to_drive_and_the_sheet(session, services, sheet, router, tmp_path):
+    """#11: screenshots are kept in the app, uploaded to Drive and linked in the sheet."""
+    from press_engine.outreach.google_auth import DRIVE_SCOPE, SHEETS_SCOPE
+
+    services.cfg.token_path.write_text(json.dumps({"token": "t", "scopes": [SHEETS_SCOPE, DRIVE_SCOPE]}))
+    uploads = []
+    router.json("GET", "https://www.googleapis.com/drive/v3/files", {"files": []})
+    router.json("POST", "https://www.googleapis.com/drive/v3/files", {"id": "folder1"})
+
+    def upload(req):
+        uploads.append(req.content)
+        return httpx.Response(200, json={"id": f"f{len(uploads)}", "webViewLink": f"https://drive.google.com/file/d/f{len(uploads)}/view"})
+
+    router.add("POST", "https://www.googleapis.com/upload/drive/v3/files", upload)
+    s = sg.submit(session, None, "This page looks broken", "Mac app", details="Contact #1 ...",
+                  images=[("shot.png", b"\x89PNG fake", "image/png"), ("notes.txt", b"hi", "text/plain")],
+                  image_dir=sg.image_dir_for(services.cfg))
+    assert [im["name"] for im in s.images] == ["shot.png"]  # only images are kept
+    assert (sg.image_dir_for(services.cfg) / s.images[0]["file"]).read_bytes() == b"\x89PNG fake"
+
+    sheet.tabs["Suggestions"] = [sg.HEADER[:9]]  # an older sheet without the new columns
+    stats = sg.sync(session, services, load_settings(session), now=NOW)
+    assert stats["images_uploaded"] == 1 and b"\x89PNG fake" in uploads[0]
+    tab = sheet.tabs["Suggestions"]
+    assert tab[0] == sg.HEADER  # header gained Details and Images
+    assert tab[1][9] == "Contact #1 ..." and tab[1][10] == "https://drive.google.com/file/d/f1/view"
+    sg.sync(session, services, load_settings(session), now=NOW + timedelta(minutes=10))
+    assert len(uploads) == 1  # not uploaded twice

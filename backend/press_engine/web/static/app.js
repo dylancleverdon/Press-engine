@@ -71,3 +71,25 @@ document.addEventListener("submit", async (e) => {
   if (submitter && submitter.hasAttribute("formaction")) form.action = submitter.formAction;
   form.submit();
 });
+
+// Paste screenshots straight into a text box: <textarea data-paste-images="file-input-id">.
+// Pasted images are added to that file input, so they're sent with the form.
+document.addEventListener("paste", (e) => {
+  const box = e.target.closest?.("[data-paste-images]");
+  if (!box) return;
+  const input = document.getElementById(box.dataset.pasteImages);
+  const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+  if (!input || !files.length) return;
+  e.preventDefault();
+  const dt = new DataTransfer();
+  [...input.files, ...files].forEach((f, i) =>
+    dt.items.add(f.name && f.name !== "image.png" ? f : new File([f], `pasted-${Date.now()}-${i}.png`, { type: f.type })));
+  input.files = dt.files;
+  let note = input.nextElementSibling;
+  if (!note || !note.classList.contains("paste-note")) {
+    note = document.createElement("div");
+    note.className = "small muted paste-note";
+    input.after(note);
+  }
+  note.textContent = `${input.files.length} image${input.files.length === 1 ? "" : "s"} attached`;
+});

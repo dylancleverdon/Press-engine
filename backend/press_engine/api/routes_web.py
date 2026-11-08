@@ -398,7 +398,7 @@ SETTINGS_FORM = [
                               ("reply_poll_minutes", "Check for replies every N minutes")]),
 ]
 TEXTAREAS = {"band_sound_profile", "pitch_body", "dm_template", "signature", "band_blurb", "press_languages",
-             "press_queries", "blocked_domains", "ask", "opt_out_line"}
+             "press_queries", "blocked_domains", "ask", "opt_out_line", "youtube_skip_words"}
 
 
 def _field_kind(name: str) -> tuple[str, list[str]]:
@@ -464,7 +464,7 @@ def apply_settings_form(form, names: list[str], data: dict) -> None:
                     if tpl.strip():
                         queries.setdefault(lang.strip().lower(), []).append(tpl.strip())
             data[name] = queries
-        elif name in ("press_languages", "blocked_domains"):
+        elif name in ("press_languages", "blocked_domains", "youtube_skip_words"):
             data[name] = [x.strip() for x in str(form.get(name, "")).splitlines() if x.strip()]
         elif name in form:
             data[name] = form.get(name)
