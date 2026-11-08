@@ -28,6 +28,7 @@ class Services:
     extract_llm: LLMClient | None = None
     score_llm: LLMClient | None = None
     google: Any = None  # GoogleAuth
+    google_youtube: Any = None  # GoogleAuth for YouTube only (can't share a sign-in with Drive)
     rng: random.Random = field(default_factory=random.Random)
     _gmail: Any = None
     _calendar: Any = None
@@ -68,13 +69,14 @@ class Services:
         """YouTube via the API key if one is set, else via the Google sign-in (youtube.readonly)."""
         if self.youtube is not None:
             return self.youtube
+        from .discovery.youtube import YouTubeClient
         from .outreach.google_auth import YOUTUBE_SCOPE
 
-        if self.google is None or not self.google.connected() or not self.google.has_scope(YOUTUBE_SCOPE):
-            return None
-        from .discovery.youtube import YouTubeClient
-
-        return YouTubeClient(None, self.http, token=self.google.access_token)
+        # Its own YouTube sign-in, or a main Google sign-in from v0.3.2-0.3.4 that included YouTube.
+        for auth in (self.google_youtube, self.google):
+            if auth is not None and auth.connected() and auth.has_scope(YOUTUBE_SCOPE):
+                return YouTubeClient(None, self.http, token=auth.access_token)
+        return None
 
     def calendar(self):
         if self._calendar is None and self.google is not None and self.google.connected():
@@ -89,7 +91,7 @@ def build_services(cfg: Config) -> Services:
     from .discovery.playlists import SpotifyClient
     from .discovery.search import build_search
     from .discovery.youtube import YouTubeClient
-    from .outreach.google_auth import GoogleAuth
+    from .outreach.google_auth import YOUTUBE_SCOPES, GoogleAuth
 
     http = make_http_client(cfg)
     fetcher = Fetcher(http, user_agent=cfg.user_agent, respect_robots=cfg.respect_robots,
@@ -115,4 +117,5 @@ def build_services(cfg: Config) -> Services:
         extract_llm=llm("extract"),
         score_llm=llm("score"),
         google=GoogleAuth(cfg.client_secrets_path, cfg.token_path),
+        google_youtube=GoogleAuth(cfg.client_secrets_path, cfg.token_path.with_name("google_youtube_token.json"), YOUTUBE_SCOPES),
     )

@@ -14,9 +14,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/spreadsheets",  # suggestions box sheet
-    "https://www.googleapis.com/auth/youtube.readonly",  # creator discovery, read-only
     "https://www.googleapis.com/auth/drive.file",  # suggestion screenshots (only files this app creates)
 ]
+# Google refuses to grant YouTube together with Drive in one sign-in, so YouTube has
+# its own sign-in and token.
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
@@ -27,9 +29,10 @@ class GoogleAuthError(RuntimeError):
 
 
 class GoogleAuth:
-    def __init__(self, client_secrets: Path, token_file: Path):
+    def __init__(self, client_secrets: Path, token_file: Path, scopes: list[str] | None = None):
         self.client_secrets = Path(client_secrets)
         self.token_file = Path(token_file)
+        self.scopes = list(scopes or SCOPES)
         self._creds = None
         self._lock = threading.Lock()
 
@@ -85,7 +88,7 @@ class GoogleAuth:
                 f"OAuth client file not found at {self.client_secrets}. Download it from Google Cloud Console "
                 "(APIs & Services > Credentials > OAuth client ID > Desktop app)."
             )
-        flow = InstalledAppFlow.from_client_secrets_file(str(self.client_secrets), SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(str(self.client_secrets), self.scopes)
         try:
             creds = flow.run_local_server(port=port, prompt="consent", access_type="offline", timeout_seconds=timeout_seconds)
         except AttributeError as e:  # no redirect arrived before the timeout

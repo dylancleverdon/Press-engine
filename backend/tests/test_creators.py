@@ -162,3 +162,21 @@ def test_youtube_uses_google_sign_in_when_no_key(session, services):
     services.http = httpx.Client(transport=httpx.MockTransport(handler))
     services.youtube_client().search("x")
     assert seen == {"auth": "Bearer tok123", "key": None}
+
+
+
+def test_youtube_has_its_own_sign_in(session, services, tmp_path):
+    """Google won't grant YouTube and Drive in one sign-in, so YouTube signs in on its own."""
+    import json
+
+    from press_engine.outreach.google_auth import SCOPES, YOUTUBE_SCOPE, YOUTUBE_SCOPES, GoogleAuth
+
+    assert YOUTUBE_SCOPE not in SCOPES and "https://www.googleapis.com/auth/drive.file" in SCOPES
+    services.youtube = None
+    yt_token = tmp_path / "google_youtube_token.json"
+    services.google_youtube = GoogleAuth(services.cfg.client_secrets_path, yt_token, YOUTUBE_SCOPES)
+    assert services.google_youtube.scopes == YOUTUBE_SCOPES
+    assert services.youtube_client() is None
+    yt_token.write_text(json.dumps({"token": "t", "scopes": YOUTUBE_SCOPES}))
+    services.google_youtube.access_token = lambda: "yt-token"
+    assert services.youtube_client().token() == "yt-token"

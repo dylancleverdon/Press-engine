@@ -5,14 +5,15 @@
 <div class="cols">
 <div>
   <div class="panel">
-    <h3>Google (Gmail sending, calendar invites, Sheets, YouTube search)</h3>
+    <h3>Google (Gmail sending, calendar invites, Sheets, Drive)</h3>
     {% if google_connected %}
       <p class="ok">Connected.</p>
-      {% if not youtube_scope or not drive_scope %}
-      <p class="warn small">{% if not youtube_scope %}YouTube access isn't allowed yet, so the YouTube engine is off. {% endif %}
-        {% if not drive_scope %}Drive access isn't allowed yet, so screenshots on suggestions stay in the app instead of going to your Drive (Press Engine can only see files it creates there). {% endif %}
-        Reconnect and tick every box on Google's page.
-        If Google says an API is disabled, enable <b>YouTube Data API v3</b> / <b>Google Drive API</b> in the same Cloud project first.</p>
+      {% if google_flow.status == "waiting" %}<p class="warn small">Waiting for you to finish signing in in your browser… <a href="/connections">refresh</a></p>{% endif %}
+      {% if google_flow.status == "error" %}<p class="bad small">{{ google_flow.error }}</p>{% endif %}
+      {% if not drive_scope %}
+      <p class="warn small">Drive access isn't allowed yet, so screenshots on suggestions stay in the app instead of going to your Drive
+        (Press Engine can only see files it creates there). Reconnect and tick every box on Google's page.
+        If Google says the API is disabled, enable <b>Google Drive API</b> in the same Cloud project first.</p>
       <form method="post" action="/connections/google/connect" class="inline"><button class="primary">Reconnect Google</button></form>
       {% endif %}
       <form method="post" action="/connections/google/disconnect" class="inline" data-confirm="Disconnect Google? Sending stops until you reconnect."><button class="danger">Disconnect</button></form>
@@ -34,6 +35,25 @@
       {% endif %}
     {% endif %}
   </div>
+
+  {% if google_has_client %}
+  <div class="panel">
+    <h3>YouTube search</h3>
+    <p class="small muted">The YouTube engine signs in to Google separately (read-only), because Google won't grant YouTube and Drive in the same sign-in.</p>
+    {% if youtube_flow.status == "waiting" %}<p class="warn small">Waiting for you to finish signing in in your browser… <a href="/connections">refresh</a></p>{% endif %}
+    {% if youtube_flow.status == "error" %}<p class="bad small">{{ youtube_flow.error }}</p>{% endif %}
+    {% if youtube_own %}
+      <p class="ok">Connected.</p>
+      <form method="post" action="/connections/youtube/disconnect" class="inline" data-confirm="Remove the YouTube sign-in? The YouTube engine stops unless an API key is set."><button class="danger">Disconnect YouTube</button></form>
+    {% else %}
+      {% if youtube_client %}<p class="small">Working for now through {{ youtube_client.via }}{% if youtube_client.via == "Google sign-in" %} (your earlier Google connection){% endif %}.
+        Connect YouTube on its own so it keeps working after you reconnect Google for Drive.</p>
+      {% else %}<p class="warn small">Not connected, so the YouTube engine is off.</p>{% endif %}
+      <form method="post" action="/connections/google/connect?which=youtube"><button class="primary">Connect YouTube</button></form>
+      <p class="small muted">If Google says the API is disabled, enable <b>YouTube Data API v3</b> in the same Cloud project first.</p>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <form method="post" action="/connections/sheet" class="panel">
     <h3>Suggestions sheet (Google Sheets)</h3>

@@ -223,17 +223,19 @@ def export(path: Path = typer.Argument(Path("press-contacts.csv"))):
 
 
 @app.command("google-auth")
-def google_auth(port: int = typer.Option(0, help="Local port for the OAuth redirect (0 = any free port)")):
-    """Connect D's Google account (Gmail send/read + Calendar)."""
-    from .outreach.google_auth import GoogleAuth, GoogleAuthError
+def google_auth(port: int = typer.Option(0, help="Local port for the OAuth redirect (0 = any free port)"),
+                youtube: bool = typer.Option(False, "--youtube", help="Connect the separate read-only YouTube sign-in")):
+    """Connect D's Google account (Gmail, Calendar, Sheets, Drive), or with --youtube the YouTube sign-in."""
+    from .outreach.google_auth import YOUTUBE_SCOPES, GoogleAuth, GoogleAuthError
 
     cfg = get_config()
+    token = cfg.token_path.with_name("google_youtube_token.json") if youtube else cfg.token_path
     try:
-        GoogleAuth(cfg.client_secrets_path, cfg.token_path).run_flow(port=port)
+        GoogleAuth(cfg.client_secrets_path, token, YOUTUBE_SCOPES if youtube else None).run_flow(port=port)
     except GoogleAuthError as e:
         typer.echo(str(e))
         raise typer.Exit(1) from e
-    typer.echo(f"Connected. Token saved to {cfg.token_path}")
+    typer.echo(f"Connected. Token saved to {token}")
 
 
 @app.command()

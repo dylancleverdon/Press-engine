@@ -152,6 +152,9 @@ def connections(request: Request, user: User = Depends(web_owner), session: Sess
                 sheets_scope=bool(google and google.has_scope(SHEETS_SCOPE)),
                 youtube_scope=bool(google and google.has_scope(YOUTUBE_SCOPE)),
                 drive_scope=bool(google and google.has_scope(DRIVE_SCOPE)),
+                youtube_own=bool(svc.google_youtube and svc.google_youtube.connected()),
+                youtube_flow=(svc.google_youtube.flow_state if svc.google_youtube else {"status": "idle"}),
+                youtube_client=svc.youtube_client(),
                 sheet_url=f"https://docs.google.com/spreadsheets/d/{sid}/edit" if sid else None,
                 google_connected=bool(google and google.connected()),
                 google_has_client=bool(google and google.client_secrets.exists()),
@@ -199,11 +202,19 @@ async def google_client(file: UploadFile = File(...), user: User = Depends(web_o
 
 
 @router.post("/connections/google/connect")
-def google_connect(user: User = Depends(web_owner), svc=Depends(get_svc)):
+def google_connect(which: str = "main", user: User = Depends(web_owner), svc=Depends(get_svc)):
     if not svc.google.client_secrets.exists():
         return _back("/connections", "Upload the OAuth client file first.")
-    svc.google.start_browser_flow()
+    auth = svc.google_youtube if which == "youtube" and svc.google_youtube is not None else svc.google
+    auth.start_browser_flow()
     return _back("/connections", "Finish signing in to Google in your browser, then come back here.")
+
+
+@router.post("/connections/youtube/disconnect")
+def youtube_disconnect(user: User = Depends(web_owner), svc=Depends(get_svc)):
+    if svc.google_youtube is not None:
+        svc.google_youtube.disconnect()
+    return _back("/connections", "YouTube sign-in removed")
 
 
 @router.post("/connections/google/disconnect")
